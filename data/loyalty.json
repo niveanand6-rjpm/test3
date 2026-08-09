@@ -1,10 +1,10 @@
 {
-  "pointsPer100Rupees": 1,
-  "repeatCustomerDiscountPercent": 1,
-  "reviewDiscountAmount": 20,
+  "pointsPer100Rupees": 5,
+  "repeatCustomerDiscountPercent": 10,
+  "reviewDiscountAmount": 50,
   "redemption": {
-    "enabled": true,
-    "thresholdPoints": 30,
+    "enabled": false,
+    "thresholdPoints": 50,
     "valuePerPoint": 1
   }
 }
