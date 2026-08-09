@@ -1,6 +1,34 @@
 # Lakshmi Fancy Store - Store Management SPA
 
-## Latest updates (2026-08-19)
+## Latest updates (2026-08-20)
+
+- **Fixed the overwrite risk on `inventory.json`, `expenses.json`, and
+  `customers.json`** when a sales device pushes: a push now GETs the
+  current remote file first and **merges by record ID** instead of
+  blindly replacing it - so an admin's new stock item, salary/rent
+  expense entry, or new customer is never silently dropped just because a
+  sales device's local cache didn't have it yet. When the *same* record
+  was genuinely edited on two devices, whichever has the newer
+  `updatedAt`/`createdAt` wins. As a bonus, the merged result is also
+  written back to the pushing device's local storage, so pushing now
+  doubles as picking up what other devices have added.
+- Added `updatedAt` tracking to the records that actually get edited in
+  place (stock quantity/price, customer points/details, rental status on
+  return) so the "which version is newer" comparison is accurate.
+
+**What this does and doesn't solve:** additions are now always safe -
+nothing gets deleted just because one device didn't know about it. Genuine
+edit conflicts on the *exact same record* from two devices in a short
+window still resolve by "most recent edit wins," which is usually right
+but isn't a true 3-way merge (e.g., if a customer's loyalty points changed
+on two devices in the same window, only one edit's point value survives,
+not both increments added together). For that level of correctness across
+many simultaneous devices, the real fix is still what's noted in the
+GitHub Sync section below: a proper real-time database. For a shop with
+one admin device and a handful of sales devices pushing a few times a day,
+this merge makes the current approach solidly safe in practice.
+
+## Previous updates (2026-08-19)
 
 - **"Send Data" tab for sales staff** - a new sales-app tab lets each
   device push its own data to GitHub, same mechanism as the admin's

@@ -570,6 +570,29 @@ const LFS = (() => {
   // Pushes the given storage keys to GitHub via the Contents API (create or
   // update, sequentially to stay well under rate limits). `onLog(line, isError)`
   // is called after each file. Resolves to { successCount, failCount }.
+  function base64ToUtf8(b64) {
+    return decodeURIComponent(escape(atob(String(b64).replace(/\n/g, ""))));
+  }
+
+  // Merges two arrays of records (each with an `id`) so a push never
+  // silently deletes a record another device added. Where the same id
+  // exists on both sides (a genuine edit conflict - e.g. the same
+  // customer's points changed on two devices), the more recently touched
+  // version wins, judged by `updatedAt`/`createdAt` if present.
+  function mergeRecordsById(remoteArr, localArr) {
+    const byId = new Map();
+    (remoteArr || []).forEach(r => { if (r && r.id) byId.set(r.id, r); });
+    (localArr || []).forEach(l => {
+      if (!l || !l.id) return;
+      const existing = byId.get(l.id);
+      if (!existing) { byId.set(l.id, l); return; }
+      const tRemote = new Date(existing.updatedAt || existing.createdAt || 0).getTime() || 0;
+      const tLocal = new Date(l.updatedAt || l.createdAt || 0).getTime() || 0;
+      byId.set(l.id, tLocal >= tRemote ? l : existing);
+    });
+    return Array.from(byId.values());
+  }
+
   async function pushKeysToGithub(keys, token, cfg, onLog) {
     const owner = (cfg.owner || "").trim();
     const repo = (cfg.repo || "").trim();
@@ -583,16 +606,32 @@ const LFS = (() => {
       const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
       try {
         let sha = null;
+        let remoteValue = null;
         const getRes = await fetch(`${apiUrl}?ref=${encodeURIComponent(branch)}`, {
           headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
         });
         if (getRes.ok) {
-          sha = (await getRes.json()).sha;
+          const getData = await getRes.json();
+          sha = getData.sha;
+          try { remoteValue = JSON.parse(base64ToUtf8(getData.content)); } catch (e) { remoteValue = null; }
         } else if (getRes.status !== 404) {
           const errData = await getRes.json().catch(() => ({}));
           throw new Error(`check failed (${getRes.status}): ${errData.message || getRes.statusText}`);
         }
-        const content = JSON.stringify(get(key), null, 2);
+
+        // Merge record-by-record (never a blind overwrite) whenever both
+        // sides are arrays of id'd records - covers sales, rentals,
+        // expenses, customers, customer notes, inventory, and every
+        // admin-only list too. Also writes the merged result back to this
+        // device, so a push doubles as picking up what other devices added.
+        let finalValue = get(key);
+        const localValue = get(key);
+        if (Array.isArray(localValue) && Array.isArray(remoteValue)) {
+          finalValue = mergeRecordsById(remoteValue, localValue);
+          set(key, finalValue);
+        }
+
+        const content = JSON.stringify(finalValue, null, 2);
         const body = { message: `Update ${filePath} via Lakshmi Fancy Store sync`, content: utf8ToBase64(content), branch };
         if (sha) body.sha = sha;
         const putRes = await fetch(apiUrl, {
@@ -689,7 +728,7 @@ const LFS_EVENT_TYPES = ["Marriage","Baby Shower","Reception","Engagement","Nami
 /* Build marker - open DevTools Console on any device and check this value
    against the version query string on index.html/admin.html's <script> tags
    to confirm the browser isn't showing a stale cached copy of the app. */
-const LFS_BUILD_VERSION = "2026-08-19";
+const LFS_BUILD_VERSION = "2026-08-20";
 console.info("Lakshmi Fancy Store build:", LFS_BUILD_VERSION);
 
 /* Shared recovery action wired to the "Trouble logging in?" link on both

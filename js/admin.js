@@ -306,7 +306,9 @@ function saveStockItem(e) {
       purchaseDate: document.getElementById("stkPurchaseDate").value,
       quantityAvailable: Number(document.getElementById("stkQty").value) || 0,
       price: Number(document.getElementById("stkPrice").value) || 0,
-      imageDataUrl: finalImage
+      imageDataUrl: finalImage,
+      createdAt: id ? (items.find(i => i.id === id) || {}).createdAt || LFS.nowISO() : LFS.nowISO(),
+      updatedAt: LFS.nowISO()
     };
     if (id) { items[items.findIndex(i => i.id === id)] = data; } else { items.push(data); }
     LFS.set("lfs_inventory", items);
@@ -1760,7 +1762,8 @@ function saveCustomer(e) {
     reviewGiven: document.getElementById("cusReview").checked,
     reviewPlatform: document.getElementById("cusReviewPlatform").value,
     notes: existing ? existing.notes || "" : "",
-    createdAt: existing ? existing.createdAt || LFS.nowISO() : LFS.nowISO()
+    createdAt: existing ? existing.createdAt || LFS.nowISO() : LFS.nowISO(),
+    updatedAt: LFS.nowISO()
   };
   if (id) customers[customers.findIndex(c => c.id === id)] = data; else customers.push(data);
   LFS.set("lfs_customers", customers);

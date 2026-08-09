@@ -462,6 +462,7 @@ function submitDailySale(e) {
 
   if (!isOther) {
     item.quantityAvailable = Math.max(0, item.quantityAvailable - qty);
+    item.updatedAt = LFS.nowISO();
     LFS.set("lfs_inventory", inv);
   }
 
@@ -479,6 +480,7 @@ function submitDailySale(e) {
       cust.loyaltyPoints = 0;
     }
     cust.loyaltyPoints = (cust.loyaltyPoints || 0) + pointsEarned;
+    cust.updatedAt = LFS.nowISO();
     LFS.set("lfs_customers", customers);
   }
   SALE_REDEEM_APPLIED = null;
@@ -814,6 +816,7 @@ function submitRental(e) {
   const pointsRedeemed = (RENTAL_REDEEM_APPLIED && RENTAL_REDEEM_APPLIED.customerId === cust.id) ? RENTAL_REDEEM_APPLIED.points : 0;
   const redemptionValue = (RENTAL_REDEEM_APPLIED && RENTAL_REDEEM_APPLIED.customerId === cust.id) ? RENTAL_REDEEM_APPLIED.value : 0;
   cust.loyaltyPoints = (cust.loyaltyPoints || 0) + pointsEarned;
+  cust.updatedAt = LFS.nowISO();
   LFS.set("lfs_customers", customers);
   RENTAL_REDEEM_APPLIED = null;
 
@@ -963,6 +966,7 @@ function markReturned(rentalId) {
   r.status = "returned";
   r.actualReturnDate = LFS.todayISO();
   r.settlementPaymentMode = modeSel ? modeSel.value : "Cash";
+  r.updatedAt = LFS.nowISO();
   LFS.set("lfs_rentals", rentals);
 
   const items = LFS.get("lfs_rental_items");
