@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Lakshmi Fancy Store</title>
 <link rel="stylesheet" href="css/style.css">
+<!-- PDF export for printable reports/bills -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 
@@ -22,6 +25,7 @@
         <button class="btn btn-primary mt-16" type="submit" style="width:100%;">Unlock</button>
       </form>
       <p class="text-soft mt-16" style="font-size:.72rem;">Password is set and can be reset by the Admin.</p>
+      <p class="mt-8" style="font-size:.72rem;"><a href="#" onclick="confirmResetAppData(event)">Trouble logging in? Reset app data on this device</a></p>
     </div>
   </div>
 
@@ -34,6 +38,7 @@
         <div class="sub" id="storeSubSlot"></div>
       </div>
       <div class="spacer"></div>
+      <select id="employeeSelect" class="employee-select" onchange="onEmployeeChange(this.value)" title="Sales person on duty"></select>
       <button class="logout-btn" onclick="doLogout()">Lock</button>
     </header>
 
@@ -41,6 +46,7 @@
       <button class="tab-btn active" data-tab="daily" onclick="switchTab('daily')">🛍️ Daily Sales</button>
       <button class="tab-btn" data-tab="rental" onclick="switchTab('rental')">💍 Rental</button>
       <button class="tab-btn" data-tab="catalog" onclick="switchTab('catalog')">📋 Catalog</button>
+      <button class="tab-btn" data-tab="expenses" onclick="switchTab('expenses')">🧾 Expenses</button>
     </nav>
 
     <main id="mainContent"></main>

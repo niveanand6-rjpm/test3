@@ -259,3 +259,59 @@ tr:hover td{background:var(--ivory-dim);}
 .stat-box{background:var(--ivory-dim);border-radius:10px;padding:14px;text-align:center;}
 .stat-box .num{font-family:'Playfair Display',serif;font-size:1.6rem;color:var(--maroon);font-weight:700;}
 .stat-box .lbl{font-size:.75rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.03em;}
+
+/* ---------- employee selector (header) ---------- */
+.employee-select{
+  background:rgba(255,255,255,.14);
+  color:var(--ivory);
+  border:1px solid rgba(255,255,255,.4);
+  border-radius:16px;
+  padding:6px 10px;
+  font-size:.8rem;
+  max-width:140px;
+}
+.employee-select option{color:var(--ink);}
+
+/* ---------- payment mode badges ---------- */
+.badge-cash{background:#EAF3E1;color:#3D6B23;}
+.badge-upi{background:#E4EEEA;color:var(--teal);}
+.badge-other{background:var(--ivory-dim);color:var(--ink-soft);}
+
+/* ---------- image portal gallery ---------- */
+.gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:10px;}
+.gallery-item{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:#fff;cursor:pointer;position:relative;transition:box-shadow .15s;}
+.gallery-item:hover{box-shadow:var(--shadow-lg);}
+.gallery-item img{width:100%;aspect-ratio:1/1;object-fit:cover;display:block;}
+.gallery-item .cap{font-size:.68rem;padding:4px 6px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.gallery-item.selected{outline:3px solid var(--gold);}
+.gallery-item .del-btn{
+  position:absolute;top:4px;right:4px;background:rgba(122,30,61,.85);color:#fff;border:none;
+  border-radius:50%;width:20px;height:20px;font-size:.7rem;cursor:pointer;line-height:1;
+}
+
+/* ---------- help / collapsible panel ---------- */
+details.help-panel{
+  background:var(--ivory-dim);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-top:10px;
+}
+details.help-panel summary{cursor:pointer;font-weight:700;color:var(--maroon);font-size:.85rem;}
+details.help-panel .help-body{margin-top:8px;font-size:.82rem;color:var(--ink-soft);}
+details.help-panel code{background:#fff;padding:1px 5px;border-radius:4px;border:1px solid var(--border);}
+.error-list{background:var(--terracotta-bg);color:var(--terracotta);border-radius:8px;padding:10px 14px;font-size:.8rem;margin-top:10px;max-height:200px;overflow:auto;}
+.error-list li{margin-bottom:3px;}
+.success-note{background:var(--teal-bg);color:var(--teal);border-radius:8px;padding:10px 14px;font-size:.85rem;margin-top:10px;}
+
+/* ---------- chart containers ---------- */
+.chart-box{background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px;}
+.chart-box canvas{max-height:280px;}
+.chart-box h4{margin:0 0 10px;font-size:.95rem;color:var(--maroon);}
+
+/* ---------- promotions ---------- */
+.promo-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+.promo-row:last-child{border-bottom:none;}
+.promo-name{font-weight:700;}
+.promo-when{font-size:.78rem;color:var(--ink-soft);}
+
+/* ---------- picker modal trigger button ---------- */
+.image-pick-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+.image-pick-preview{width:56px;height:56px;border-radius:8px;overflow:hidden;background:var(--ivory-dim);display:flex;align-items:center;justify-content:center;border:1px solid var(--border);}
+.image-pick-preview img{width:100%;height:100%;object-fit:cover;}

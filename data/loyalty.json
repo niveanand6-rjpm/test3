@@ -2,6 +2,11 @@
   "pointsPer100Rupees": 5,
   "repeatCustomerDiscountPercent": 10,
   "reviewDiscountAmount": 50,
+  "redemption": {
+    "enabled": false,
+    "thresholdPoints": 50,
+    "valuePerPoint": 1
+  },
   "flashSale": {
     "enabled": false,
     "discountPercent": 15,

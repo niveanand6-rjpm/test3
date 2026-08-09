@@ -5,11 +5,14 @@
 let CURRENT_TAB = "daily";
 let CURRENT_RENTAL_SUBTAB = "new";
 let SELECTED_RENTAL_ITEM = null;
+let RENTAL_REDEEM_APPLIED = null; // { points, value } while a redemption is staged for the current rental
+let SALE_REDEEM_APPLIED = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
   await LFS.init();
   LFS.scheduleAutoBackup();
   paintHeader();
+  paintEmployeeSelect();
   if (LFS.isAuthed("lfs_auth_sales")) {
     showApp();
   } else {
@@ -33,18 +36,31 @@ function paintHeader() {
   if (subSlot) subSlot.textContent = s.branch || "";
 }
 
+function paintEmployeeSelect() {
+  const sel = document.getElementById("employeeSelect");
+  if (!sel) return;
+  const staff = LFS.get("lfs_staff").filter(s => s.active);
+  const current = LFS.currentEmployeeName();
+  sel.innerHTML = `<option value="">-- Sales person --</option>` + staff.map(s => `<option value="${escapeHtml(s.name)}" ${s.name === current ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("");
+  if (!current && staff.length) { /* leave unselected until they choose */ }
+}
+function onEmployeeChange(name) {
+  LFS.setCurrentEmployeeName(name);
+  toast(name ? `Signed in as ${name}` : "Sales person cleared");
+  renderTab();
+}
+
 /* ---------- login ---------- */
 function showLogin() {
   document.getElementById("loginScreen").classList.remove("hidden");
   document.getElementById("appScreen").classList.add("hidden");
 }
-
 function showApp() {
   document.getElementById("loginScreen").classList.add("hidden");
   document.getElementById("appScreen").classList.remove("hidden");
+  paintEmployeeSelect();
   renderTab();
 }
-
 function attemptLogin(e) {
   e.preventDefault();
   const pw = document.getElementById("loginPassword").value;
@@ -57,30 +73,60 @@ function attemptLogin(e) {
     document.getElementById("loginError").classList.remove("hidden");
   }
 }
-
-function doLogout() {
-  LFS.logout("lfs_auth_sales");
-  showLogin();
-}
+function doLogout() { LFS.logout("lfs_auth_sales"); showLogin(); }
 
 /* ---------- tab switching ---------- */
 function switchTab(tab) {
   CURRENT_TAB = tab;
-  document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  document.querySelectorAll(".tab-btn[data-tab]").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
   renderTab();
 }
-
-function switchRentalSubtab(sub) {
-  CURRENT_RENTAL_SUBTAB = sub;
-  renderTab();
-}
+function switchRentalSubtab(sub) { CURRENT_RENTAL_SUBTAB = sub; renderTab(); }
 
 function renderTab() {
   const main = document.getElementById("mainContent");
   if (CURRENT_TAB === "daily") main.innerHTML = renderDailySales();
   else if (CURRENT_TAB === "rental") main.innerHTML = renderRentalTab();
   else if (CURRENT_TAB === "catalog") main.innerHTML = renderCatalog();
+  else if (CURRENT_TAB === "expenses") main.innerHTML = renderDailyExpenses();
   wireTabEvents();
+}
+
+/* ---------- shared receipt builder + offscreen print ---------- */
+function buildReceiptHtml(opts) {
+  const s = LFS.get("lfs_settings");
+  return `
+    <div class="receipt">
+      <h3>${escapeHtml(s.storeName || "Lakshmi Fancy Store")}</h3>
+      <div class="center text-soft">${escapeHtml(s.address || "")}</div>
+      <div class="center text-soft">${escapeHtml(s.phone || "")}</div>
+      <hr>
+      ${opts.itemImage ? `<img class="item-img" src="${opts.itemImage}">` : ""}
+      <div class="row"><span>Item</span><span>${escapeHtml(opts.itemName || "")}</span></div>
+      <div class="row"><span>${opts.dateLabel}</span><span>${opts.dateValue}</span></div>
+      ${opts.dateLabel2 ? `<div class="row"><span>${opts.dateLabel2}</span><span>${opts.dateValue2}</span></div>` : ""}
+      <div class="row"><span>Customer</span><span>${escapeHtml(opts.customerName || "Walk-in")}</span></div>
+      ${opts.phone ? `<div class="row"><span>Phone</span><span>${opts.phone}</span></div>` : ""}
+      <hr>
+      ${opts.rows.map(r => `<div class="row"><span>${r.label}</span><span>${r.value}</span></div>`).join("")}
+      <hr>
+      <div class="row total-row"><span>${opts.totalLabel}</span><span>${opts.totalValue}</span></div>
+      ${opts.paymentMode ? `<div class="center text-soft mt-8">Paid via ${opts.paymentMode}</div>` : ""}
+    </div>
+  `;
+}
+function printOffscreenReceipt(html) {
+  let holder = document.getElementById("offscreenReceiptHolder");
+  if (!holder) {
+    holder = document.createElement("div");
+    holder.id = "offscreenReceiptHolder";
+    holder.style.position = "fixed";
+    holder.style.left = "-9999px";
+    holder.style.top = "0";
+    document.body.appendChild(holder);
+  }
+  holder.innerHTML = html;
+  setTimeout(() => window.print(), 60);
 }
 
 /* ============================================================
@@ -89,12 +135,30 @@ function renderTab() {
 function renderDailySales() {
   const inv = LFS.get("lfs_inventory");
   const sales = LFS.get("lfs_sales").slice().reverse().slice(0, 25);
-  const options = inv.map(i => `<option value="${i.id}">${i.itemName} (${i.itemCode}) - ${LFS.formatMoney(i.price)} - Qty ${i.quantityAvailable}</option>`).join("");
+  const options = inv.map(i => `<option value="${i.id}">${escapeHtml(i.itemName)} (${i.itemCode}) - ${LFS.formatMoney(i.price)} - Qty ${i.quantityAvailable}</option>`).join("");
+  const staff = LFS.get("lfs_staff").filter(s => s.active);
+  const currentEmp = LFS.currentEmployeeName();
+  const promo = LFS.activePromotionToday();
+
   return `
     <div class="card">
       <h2>Daily Sales Entry</h2>
       <p class="text-soft">Quick sale of small fancy items from current stock.</p>
+      ${promo ? `<div class="success-note">🎉 ${escapeHtml(promo.name)} promotion is live today - ${promo.discountPercent}% off available.</div>` : ""}
       <form id="dailySaleForm">
+        <div class="grid cols-2">
+          <div class="field">
+            <label>Sales Person *</label>
+            <select id="dsEmployee" required>
+              <option value="">-- Select employee --</option>
+              ${staff.map(s => `<option value="${escapeHtml(s.name)}" ${s.name === currentEmp ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}
+            </select>
+          </div>
+          <div class="field">
+            <label>Payment Mode *</label>
+            <select id="dsPayment" required>${LFS.PAYMENT_MODES.map(m => `<option>${m}</option>`).join("")}</select>
+          </div>
+        </div>
         <div class="grid cols-2">
           <div class="field">
             <label>Customer Phone (optional)</label>
@@ -119,7 +183,7 @@ function renderDailySales() {
             <input type="number" id="dsQty" min="1" value="1" oninput="updateDailySaleTotals()">
           </div>
           <div class="field">
-            <label>Discount (₹)</label>
+            <label>Discount (₹) <span class="text-soft" id="dsDiscountHint"></span></label>
             <input type="number" id="dsDiscount" min="0" value="0" oninput="updateDailySaleTotals()">
           </div>
           <div class="field">
@@ -127,16 +191,21 @@ function renderDailySales() {
             <input type="text" id="dsTotal" readonly value="₹0">
           </div>
         </div>
+        <div id="dsLoyaltySlot"></div>
         <button class="btn btn-primary" type="submit">Save Sale</button>
       </form>
     </div>
     <div class="card">
-      <div class="flex-between"><h3 style="margin:0;">Recent Sales</h3><button class="btn btn-outline btn-sm" onclick="printDailySalesReportSales()">Print</button></div>
+      <div class="flex-between"><h3 style="margin:0;">Recent Sales</h3><button class="btn btn-outline btn-sm" onclick="printDailySalesReportSales()">Print All</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Date</th><th>Item</th><th>Qty</th><th>Customer</th><th>Total</th></tr></thead>
+          <thead><tr><th>Date</th><th>Item</th><th>Qty</th><th>Customer</th><th>Payment</th><th>Total</th><th></th></tr></thead>
           <tbody>
-            ${sales.map(s => `<tr><td>${s.date}</td><td>${s.itemName}</td><td>${s.quantity}</td><td>${s.customerName || "Walk-in"}</td><td>${LFS.formatMoney(s.total)}</td></tr>`).join("") || `<tr><td colspan="5" class="text-soft">No sales recorded yet.</td></tr>`}
+            ${sales.map(s => `<tr>
+              <td>${s.date}</td><td>${escapeHtml(s.itemName)}</td><td>${s.quantity}</td><td>${escapeHtml(s.customerName || "Walk-in")}</td>
+              <td>${paymentBadge(s.paymentMode)}</td><td>${LFS.formatMoney(s.total)}</td>
+              <td><button class="btn btn-outline btn-sm" onclick="printSaleReceipt('${s.id}')">Print</button></td>
+            </tr>`).join("") || `<tr><td colspan="7" class="text-soft">No sales recorded yet.</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -144,20 +213,87 @@ function renderDailySales() {
   `;
 }
 
+function paymentBadge(mode) {
+  const cls = mode === "Cash" ? "badge-cash" : (mode === "GPay" || mode === "PhonePe" || mode === "Other UPI") ? "badge-upi" : "badge-other";
+  return `<span class="badge ${cls}">${escapeHtml(mode || "-")}</span>`;
+}
+
 function printDailySalesReportSales() {
   const sales = LFS.get("lfs_sales").slice().reverse();
-  const rows = sales.map(s => `<tr><td>${s.date}</td><td>${escapeHtml(s.itemName)}</td><td>${s.quantity}</td><td>${escapeHtml(s.customerName || "Walk-in")}</td><td>${LFS.formatMoney(s.total)}</td></tr>`).join("") || `<tr><td colspan="5">No sales.</td></tr>`;
-  LFS.printReport("Daily Sales Report", `<table><thead><tr><th>Date</th><th>Item</th><th>Qty</th><th>Customer</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table>`);
+  const rows = sales.map(s => ({ date: s.date, item: s.itemName, qty: s.quantity, customer: s.customerName || "Walk-in", payment: s.paymentMode || "-", total: LFS.formatMoney(s.total) }));
+  LFS.printReport("Daily Sales Report", LFS.tableHtml(rows, [
+    { key: "date", label: "Date" }, { key: "item", label: "Item" }, { key: "qty", label: "Qty" },
+    { key: "customer", label: "Customer" }, { key: "payment", label: "Payment" }, { key: "total", label: "Total" }
+  ]));
+}
+
+function printSaleReceipt(saleId) {
+  const sale = LFS.get("lfs_sales").find(s => s.id === saleId);
+  if (!sale) return;
+  const inv = LFS.get("lfs_inventory").find(i => i.id === sale.itemId);
+  const html = buildReceiptHtml({
+    itemName: `${sale.itemName} x${sale.quantity}`,
+    itemImage: inv ? inv.imageDataUrl : "",
+    dateLabel: "Date", dateValue: sale.date,
+    customerName: sale.customerName, phone: sale.customerPhone,
+    rows: [
+      { label: "Unit Price", value: LFS.formatMoney(sale.unitPrice) },
+      { label: "Quantity", value: sale.quantity },
+      { label: "Discount", value: "-" + LFS.formatMoney(sale.discount) }
+    ],
+    totalLabel: "Total Paid", totalValue: LFS.formatMoney(sale.total),
+    paymentMode: sale.paymentMode
+  });
+  // Employee name is intentionally omitted from the printed bill.
+  printOffscreenReceipt(html);
 }
 
 function lookupDailyCustomer() {
   const phone = document.getElementById("dsPhone").value.trim();
   const err = document.getElementById("dsPhoneErr");
   err.classList.toggle("hidden", phone.length === 0 || LFS.isValidPhone(phone));
+  document.getElementById("dsLoyaltySlot").innerHTML = "";
+  document.getElementById("dsDiscountHint").textContent = "";
   if (LFS.isValidPhone(phone)) {
     const cust = LFS.get("lfs_customers").find(c => c.phone === phone);
-    if (cust) document.getElementById("dsName").value = cust.name;
+    if (cust) {
+      document.getElementById("dsName").value = cust.name;
+      renderDailyLoyaltyHints(cust);
+    }
   }
+}
+
+function renderDailyLoyaltyHints(cust) {
+  const loyalty = LFS.get("lfs_loyalty");
+  let hints = [];
+  if (cust.repeatCustomer) hints.push(`Repeat customer: ${loyalty.repeatCustomerDiscountPercent}% off available`);
+  if (cust.reviewGiven) hints.push(`Review discount: ${LFS.formatMoney(loyalty.reviewDiscountAmount)} available`);
+  document.getElementById("dsDiscountHint").textContent = hints.length ? "(" + hints.join(", ") + ")" : "";
+
+  const redemption = loyalty.redemption || {};
+  const slot = document.getElementById("dsLoyaltySlot");
+  if (redemption.enabled && (cust.loyaltyPoints || 0) >= (redemption.thresholdPoints || 999999)) {
+    const value = (cust.loyaltyPoints || 0) * (redemption.valuePerPoint || 0);
+    slot.innerHTML = `
+      <div class="success-note flex-between">
+        <span>${cust.name} has ${cust.loyaltyPoints} loyalty points - redeemable for ${LFS.formatMoney(value)}.</span>
+        <button type="button" class="btn btn-gold btn-sm" onclick="applyDailySaleRedemption('${cust.id}')">Redeem Points</button>
+      </div>`;
+  } else {
+    slot.innerHTML = "";
+  }
+}
+
+function applyDailySaleRedemption(custId) {
+  const cust = LFS.get("lfs_customers").find(c => c.id === custId);
+  if (!cust) return;
+  const loyalty = LFS.get("lfs_loyalty");
+  const value = Math.round((cust.loyaltyPoints || 0) * (loyalty.redemption.valuePerPoint || 0));
+  SALE_REDEEM_APPLIED = { customerId: cust.id, points: cust.loyaltyPoints, value };
+  const discountField = document.getElementById("dsDiscount");
+  discountField.value = (Number(discountField.value) || 0) + value;
+  updateDailySaleTotals();
+  toast(`Applied ${LFS.formatMoney(value)} redemption discount`);
 }
 
 function updateDailySaleTotals() {
@@ -171,6 +307,9 @@ function updateDailySaleTotals() {
 
 function submitDailySale(e) {
   e.preventDefault();
+  const employee = document.getElementById("dsEmployee").value;
+  if (!employee) { toast("Please select the sales person"); return; }
+  LFS.setCurrentEmployeeName(employee);
   const phone = document.getElementById("dsPhone").value.trim();
   if (phone && !LFS.isValidPhone(phone)) { toast("Please enter a valid 10-digit phone number"); return; }
   const inv = LFS.get("lfs_inventory");
@@ -181,7 +320,7 @@ function submitDailySale(e) {
   if (qty > item.quantityAvailable) { toast(`Only ${item.quantityAvailable} in stock`); return; }
   const discount = Number(document.getElementById("dsDiscount").value) || 0;
   const total = Math.max(0, item.price * qty - discount);
-  const s = JSON.parse(sessionStorage.getItem("lfs_settings_cache") || "{}");
+  const paymentMode = document.getElementById("dsPayment").value;
 
   const sales = LFS.get("lfs_sales");
   sales.push({
@@ -193,14 +332,34 @@ function submitDailySale(e) {
     unitPrice: item.price,
     discount,
     total,
+    paymentMode,
     customerPhone: phone,
     customerName: document.getElementById("dsName").value.trim() || "Walk-in",
-    soldBy: "Sales Person"
+    soldBy: employee
   });
   LFS.set("lfs_sales", sales);
 
   item.quantityAvailable = Math.max(0, item.quantityAvailable - qty);
   LFS.set("lfs_inventory", inv);
+
+  // update / create customer + loyalty points
+  if (phone) {
+    const customers = LFS.get("lfs_customers");
+    let cust = customers.find(c => c.phone === phone);
+    const loyalty = LFS.get("lfs_loyalty");
+    if (!cust) {
+      cust = { id: LFS.uid("cus"), name: document.getElementById("dsName").value.trim() || "Walk-in", phone, address: "", region: "Rajapalayam", loyaltyPoints: 0, repeatCustomer: false, reviewGiven: false, reviewPlatform: "", notes: "" };
+      customers.push(cust);
+    } else {
+      cust.repeatCustomer = true;
+    }
+    if (SALE_REDEEM_APPLIED && SALE_REDEEM_APPLIED.customerId === cust.id) {
+      cust.loyaltyPoints = 0;
+    }
+    cust.loyaltyPoints = (cust.loyaltyPoints || 0) + Math.floor(total * (loyalty.pointsPer100Rupees || 0) / 100);
+    LFS.set("lfs_customers", customers);
+  }
+  SALE_REDEEM_APPLIED = null;
 
   toast("Sale saved successfully");
   renderTab();
@@ -224,44 +383,55 @@ function renderRentalTab() {
 
 function renderNewRental() {
   const items = LFS.get("lfs_rental_items").filter(i => i.status === "available");
-  const options = items.map(i => `<option value="${i.id}">${i.itemName} (${i.itemCode}) - ${LFS.formatMoney(i.dailyRate)}/day</option>`).join("");
+  const options = items.map(i => `<option value="${i.id}">${escapeHtml(i.itemName)} (${i.itemCode}) - ${LFS.formatMoney(i.dailyRate)}/day</option>`).join("");
+  const staff = LFS.get("lfs_staff").filter(s => s.active);
+  const currentEmp = LFS.currentEmployeeName();
+  const promo = LFS.activePromotionToday();
   return `
     <div class="card">
       <h2>New Rental - POS Terminal</h2>
+      ${promo ? `<div class="success-note">🎉 ${escapeHtml(promo.name)} promotion is live today - ${promo.discountPercent}% off available.</div>` : ""}
       <form id="rentalForm">
         <div class="grid cols-2">
+          <div class="field">
+            <label>Sales Person *</label>
+            <select id="rnEmployee" required>
+              <option value="">-- Select employee --</option>
+              ${staff.map(s => `<option value="${escapeHtml(s.name)}" ${s.name === currentEmp ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}
+            </select>
+          </div>
           <div class="field">
             <label>Customer Phone *</label>
             <input type="tel" id="rnPhone" maxlength="10" required placeholder="10-digit mobile number" oninput="lookupRentalCustomer()">
             <div class="error-msg hidden" id="rnPhoneErr">Enter a valid 10-digit number</div>
           </div>
+        </div>
+        <div class="grid cols-2">
           <div class="field">
             <label>Customer Name *</label>
             <input type="text" id="rnName" required>
           </div>
-        </div>
-        <div class="grid cols-2">
           <div class="field">
             <label>Customer Address</label>
             <input type="text" id="rnAddress">
           </div>
-          <div class="field">
-            <label>Region</label>
-            <select id="rnRegion">${LFS_REGIONS.map(r => `<option>${r}</option>`).join("")}</select>
-          </div>
         </div>
         <div class="grid cols-2">
           <div class="field">
-            <label>Jewellery Item *</label>
-            <select id="rnItem" required onchange="onRentalItemChange()">
-              <option value="">-- Select item --</option>
-              ${options}
-            </select>
+            <label>Region</label>
+            <select id="rnRegion">${LFS_REGIONS.map(r => `<option>${r}</option>`).join("")}</select>
           </div>
           <div class="field">
             <label>Event Type</label>
             <select id="rnEvent">${LFS_EVENT_TYPES.map(e => `<option>${e}</option>`).join("")}</select>
           </div>
+        </div>
+        <div class="field">
+          <label>Jewellery Item *</label>
+          <select id="rnItem" required onchange="onRentalItemChange()">
+            <option value="">-- Select item --</option>
+            ${options}
+          </select>
         </div>
         <div id="rnItemPreview"></div>
         <div class="grid cols-3">
@@ -292,19 +462,24 @@ function renderNewRental() {
             <input type="number" id="rnDiscount" min="0" value="0" oninput="recalcRental()">
           </div>
         </div>
+        <div id="rnLoyaltySlot"></div>
         <div class="grid cols-3">
           <div class="field">
             <label>Advance Paid (₹)</label>
             <input type="number" id="rnAdvance" min="0" value="0" oninput="recalcRental()">
           </div>
           <div class="field">
+            <label>Advance Payment Mode</label>
+            <select id="rnAdvanceMode">${LFS.PAYMENT_MODES.map(m => `<option>${m}</option>`).join("")}</select>
+          </div>
+          <div class="field">
             <label>Total ((Rate×Days)+Deposit)</label>
             <input type="text" id="rnTotal" readonly>
           </div>
-          <div class="field">
-            <label>Balance Pending</label>
-            <input type="text" id="rnBalance" readonly>
-          </div>
+        </div>
+        <div class="field" style="max-width:280px;">
+          <label>Balance Pending</label>
+          <input type="text" id="rnBalance" readonly>
         </div>
         <div class="flex gap-8">
           <button class="btn btn-primary" type="submit">Save Rental &amp; Print Receipt</button>
@@ -342,7 +517,7 @@ function onRentalItemChange() {
         ${item.imageDataUrl ? `<img src="${item.imageDataUrl}" style="width:100%;height:100%;object-fit:cover;">` : `<span style="color:var(--gold);font-family:'Playfair Display',serif;">L</span>`}
       </div>
       <div>
-        <div style="font-weight:700;">${item.itemName}</div>
+        <div style="font-weight:700;">${escapeHtml(item.itemName)}</div>
         <div class="text-soft">${item.itemCode} · ${item.itemType}</div>
       </div>
     </div>` : "";
@@ -357,7 +532,6 @@ function recalcRental() {
   const advance = Number(document.getElementById("rnAdvance").value) || 0;
   let discount = Number(document.getElementById("rnDiscount").value) || 0;
 
-  // Suggest discount based on loyalty rules (repeat customer / review / flash sale)
   const phone = document.getElementById("rnPhone").value.trim();
   const loyalty = LFS.get("lfs_loyalty");
   const cust = LFS.get("lfs_customers").find(c => c.phone === phone);
@@ -370,7 +544,22 @@ function recalcRental() {
       hints.push(`Flash sale active: ${loyalty.flashSale.discountPercent}% off`);
     }
   }
+  const promo = LFS.activePromotionToday();
+  if (promo) hints.push(`${promo.name}: ${promo.discountPercent}% off`);
   document.getElementById("rnDiscountHint").textContent = hints.length ? "(" + hints.join(", ") + ")" : "";
+
+  const loyaltySlot = document.getElementById("rnLoyaltySlot");
+  const redemption = loyalty.redemption || {};
+  if (cust && redemption.enabled && (cust.loyaltyPoints || 0) >= (redemption.thresholdPoints || 999999)) {
+    const value = (cust.loyaltyPoints || 0) * (redemption.valuePerPoint || 0);
+    loyaltySlot.innerHTML = `
+      <div class="success-note flex-between mt-8">
+        <span>${escapeHtml(cust.name)} has ${cust.loyaltyPoints} loyalty points - redeemable for ${LFS.formatMoney(value)}.</span>
+        <button type="button" class="btn btn-gold btn-sm" onclick="applyRentalRedemption('${cust.id}')">Redeem Points</button>
+      </div>`;
+  } else if (loyaltySlot) {
+    loyaltySlot.innerHTML = "";
+  }
 
   const returnDate = new Date(date);
   returnDate.setDate(returnDate.getDate() + days);
@@ -382,8 +571,23 @@ function recalcRental() {
   document.getElementById("rnBalance").value = LFS.formatMoney(balance);
 }
 
+function applyRentalRedemption(custId) {
+  const cust = LFS.get("lfs_customers").find(c => c.id === custId);
+  if (!cust) return;
+  const loyalty = LFS.get("lfs_loyalty");
+  const value = Math.round((cust.loyaltyPoints || 0) * (loyalty.redemption.valuePerPoint || 0));
+  RENTAL_REDEEM_APPLIED = { customerId: cust.id, points: cust.loyaltyPoints, value };
+  const discountField = document.getElementById("rnDiscount");
+  discountField.value = (Number(discountField.value) || 0) + value;
+  recalcRental();
+  toast(`Applied ${LFS.formatMoney(value)} redemption discount`);
+}
+
 function submitRental(e) {
   e.preventDefault();
+  const employee = document.getElementById("rnEmployee").value;
+  if (!employee) { toast("Please select the sales person"); return; }
+  LFS.setCurrentEmployeeName(employee);
   const phone = document.getElementById("rnPhone").value.trim();
   if (!LFS.isValidPhone(phone)) { toast("Please enter a valid 10-digit phone number"); return; }
   const itemId = document.getElementById("rnItem").value;
@@ -397,6 +601,7 @@ function submitRental(e) {
   const deposit = Number(document.getElementById("rnDeposit").value) || 0;
   const discount = Number(document.getElementById("rnDiscount").value) || 0;
   const advance = Number(document.getElementById("rnAdvance").value) || 0;
+  const advanceMode = document.getElementById("rnAdvanceMode").value;
   const total = (rate * days) + deposit;
   const balance = total - discount - advance;
   const returnDate = new Date(date); returnDate.setDate(returnDate.getDate() + days);
@@ -405,7 +610,6 @@ function submitRental(e) {
   const address = document.getElementById("rnAddress").value.trim();
   const region = document.getElementById("rnRegion").value;
 
-  // upsert customer
   const customers = LFS.get("lfs_customers");
   let cust = customers.find(c => c.phone === phone);
   if (!cust) {
@@ -415,9 +619,13 @@ function submitRental(e) {
     cust.name = name; cust.address = address; cust.region = region;
     cust.repeatCustomer = true;
   }
+  if (RENTAL_REDEEM_APPLIED && RENTAL_REDEEM_APPLIED.customerId === cust.id) {
+    cust.loyaltyPoints = 0;
+  }
   const loyalty = LFS.get("lfs_loyalty");
   cust.loyaltyPoints = (cust.loyaltyPoints || 0) + Math.floor(total * (loyalty.pointsPer100Rupees || 0) / 100);
   LFS.set("lfs_customers", customers);
+  RENTAL_REDEEM_APPLIED = null;
 
   const rentals = LFS.get("lfs_rentals");
   const record = {
@@ -431,8 +639,8 @@ function submitRental(e) {
     rentalDate: date,
     expectedReturnDate: returnDate.toISOString().slice(0, 10),
     actualReturnDate: "",
-    days, dailyRate: rate, deposit, discount, advancePaid: advance,
-    total, balance, status: "active", handledBy: "Sales Person"
+    days, dailyRate: rate, deposit, discount, advancePaid: advance, advancePaymentMode: advanceMode,
+    total, balance, status: "active", handledBy: employee, settlementPaymentMode: ""
   };
   rentals.push(record);
   LFS.set("lfs_rentals", rentals);
@@ -440,29 +648,24 @@ function submitRental(e) {
   item.status = "rented";
   LFS.set("lfs_rental_items", items);
 
-  const s = LFS.get("lfs_settings");
+  const html = buildReceiptHtml({
+    itemName: item.itemName, itemImage: item.imageDataUrl,
+    dateLabel: "Rental Date", dateValue: date, dateLabel2: "Return Due", dateValue2: record.expectedReturnDate,
+    customerName: name, phone,
+    rows: [
+      { label: "Daily Rate × Days", value: LFS.formatMoney(rate * days) },
+      { label: "Deposit", value: LFS.formatMoney(deposit) },
+      { label: "Discount", value: "-" + LFS.formatMoney(discount) },
+      { label: "Advance Paid", value: "-" + LFS.formatMoney(advance) }
+    ],
+    totalLabel: "Balance Pending", totalValue: LFS.formatMoney(balance),
+    paymentMode: advance > 0 ? advanceMode : ""
+  });
   document.getElementById("receiptSlot").innerHTML = `
     <div class="card">
-      <div class="receipt" id="printReceipt">
-        <h3>${s.storeName}</h3>
-        <div class="center text-soft">${s.address || ""}</div>
-        <div class="center text-soft">${s.phone || ""}</div>
-        <hr>
-        ${item.imageDataUrl ? `<img class="item-img" src="${item.imageDataUrl}">` : ""}
-        <div class="row"><span>Item</span><span>${item.itemName}</span></div>
-        <div class="row"><span>Rental Date</span><span>${date}</span></div>
-        <div class="row"><span>Return Due</span><span>${record.expectedReturnDate}</span></div>
-        <div class="row"><span>Customer</span><span>${name}</span></div>
-        <div class="row"><span>Phone</span><span>${phone}</span></div>
-        <hr>
-        <div class="row"><span>Daily Rate × Days</span><span>${LFS.formatMoney(rate * days)}</span></div>
-        <div class="row"><span>Deposit</span><span>${LFS.formatMoney(deposit)}</span></div>
-        <div class="row"><span>Discount</span><span>-${LFS.formatMoney(discount)}</span></div>
-        <div class="row"><span>Advance Paid</span><span>-${LFS.formatMoney(advance)}</span></div>
-        <hr>
-        <div class="row total-row"><span>Balance Pending</span><span>${LFS.formatMoney(balance)}</span></div>
-      </div>
-      <div class="text-center mt-16"><button class="btn btn-gold" onclick="window.print()">Print Receipt</button></div>
+      ${html}
+      <div class="text-center mt-16"><button class="btn btn-gold" onclick="printOffscreenReceipt(document.getElementById('printableRentalReceipt').innerHTML)">Print Receipt</button></div>
+      <div id="printableRentalReceipt" class="hidden">${html}</div>
     </div>
   `;
 
@@ -471,7 +674,6 @@ function submitRental(e) {
 }
 
 function renderNewRentalReset() {
-  // keep receipt visible; just refresh the form's item dropdown (item now rented)
   const formCard = document.querySelector("#rentalSubContent .card");
   if (formCard) formCard.outerHTML = renderNewRental().split('<div id="receiptSlot">')[0];
   wireTabEvents();
@@ -483,20 +685,24 @@ function renderHistoricRentals() {
   const past = rentals.filter(r => r.status !== "active");
   return `
     <div class="card">
-      <div class="flex-between"><h2 style="margin:0;">Active Rentals</h2><button class="btn btn-outline btn-sm" onclick="printRentalsReportSales()">Print</button></div>
+      <div class="flex-between"><h2 style="margin:0;">Active Rentals</h2><button class="btn btn-outline btn-sm" onclick="printRentalsReportSales()">Print All</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Item</th><th>Customer</th><th>Rented</th><th>Due</th><th>Balance</th><th></th></tr></thead>
+          <thead><tr><th>Item</th><th>Customer</th><th>Rented</th><th>Due</th><th>Balance</th><th>Settle Via</th><th></th></tr></thead>
           <tbody>
             ${active.map(r => `
               <tr>
-                <td>${r.itemName}</td>
-                <td>${r.customerName}<br><span class="text-soft">${r.customerPhone}</span></td>
+                <td>${escapeHtml(r.itemName)}</td>
+                <td>${escapeHtml(r.customerName)}<br><span class="text-soft">${r.customerPhone}</span></td>
                 <td>${r.rentalDate}</td>
                 <td>${r.expectedReturnDate}</td>
                 <td>${LFS.formatMoney(r.balance)}</td>
-                <td><button class="btn btn-outline btn-sm" onclick="markReturned('${r.id}')">Mark Returned</button></td>
-              </tr>`).join("") || `<tr><td colspan="6" class="text-soft">No active rentals.</td></tr>`}
+                <td><select id="settleMode_${r.id}" style="width:110px;">${LFS.PAYMENT_MODES.map(m => `<option>${m}</option>`).join("")}</select></td>
+                <td class="flex gap-8">
+                  <button class="btn btn-outline btn-sm" onclick="markReturned('${r.id}')">Mark Returned</button>
+                  <button class="btn btn-outline btn-sm" onclick="printRentalReceipt('${r.id}')">Print</button>
+                </td>
+              </tr>`).join("") || `<tr><td colspan="7" class="text-soft">No active rentals.</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -505,9 +711,12 @@ function renderHistoricRentals() {
       <h2>Rental History</h2>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Item</th><th>Customer</th><th>Rented</th><th>Returned</th><th>Total</th></tr></thead>
+          <thead><tr><th>Item</th><th>Customer</th><th>Rented</th><th>Returned</th><th>Total</th><th></th></tr></thead>
           <tbody>
-            ${past.map(r => `<tr><td>${r.itemName}</td><td>${r.customerName}</td><td>${r.rentalDate}</td><td>${r.actualReturnDate}</td><td>${LFS.formatMoney(r.total)}</td></tr>`).join("") || `<tr><td colspan="5" class="text-soft">No history yet.</td></tr>`}
+            ${past.map(r => `<tr>
+              <td>${escapeHtml(r.itemName)}</td><td>${escapeHtml(r.customerName)}</td><td>${r.rentalDate}</td><td>${r.actualReturnDate}</td><td>${LFS.formatMoney(r.total)}</td>
+              <td><button class="btn btn-outline btn-sm" onclick="printRentalReceipt('${r.id}')">Print</button></td>
+            </tr>`).join("") || `<tr><td colspan="6" class="text-soft">No history yet.</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -515,17 +724,45 @@ function renderHistoricRentals() {
   `;
 }
 
+function printRentalReceipt(rentalId) {
+  const r = LFS.get("lfs_rentals").find(x => x.id === rentalId);
+  if (!r) return;
+  const item = LFS.get("lfs_rental_items").find(i => i.id === r.rentalItemId);
+  const html = buildReceiptHtml({
+    itemName: r.itemName, itemImage: item ? item.imageDataUrl : "",
+    dateLabel: "Rental Date", dateValue: r.rentalDate,
+    dateLabel2: r.status === "active" ? "Return Due" : "Returned", dateValue2: r.status === "active" ? r.expectedReturnDate : r.actualReturnDate,
+    customerName: r.customerName, phone: r.customerPhone,
+    rows: [
+      { label: "Daily Rate × Days", value: LFS.formatMoney(r.dailyRate * r.days) },
+      { label: "Deposit", value: LFS.formatMoney(r.deposit) },
+      { label: "Discount", value: "-" + LFS.formatMoney(r.discount) },
+      { label: "Advance Paid", value: "-" + LFS.formatMoney(r.advancePaid) }
+    ],
+    totalLabel: r.status === "active" ? "Balance Pending" : "Total",
+    totalValue: LFS.formatMoney(r.status === "active" ? r.balance : r.total),
+    paymentMode: r.status === "active" ? r.advancePaymentMode : (r.settlementPaymentMode || r.advancePaymentMode)
+  });
+  printOffscreenReceipt(html);
+}
+
 function printRentalsReportSales() {
   const rentals = LFS.get("lfs_rentals").slice().reverse();
-  const rows = rentals.map(r => `<tr><td>${r.rentalDate}</td><td>${escapeHtml(r.itemName)}</td><td>${escapeHtml(r.customerName)}</td><td>${r.status}</td><td>${LFS.formatMoney(r.total)}</td><td>${LFS.formatMoney(r.balance)}</td></tr>`).join("") || `<tr><td colspan="6">No rentals.</td></tr>`;
-  LFS.printReport("Rentals Report", `<table><thead><tr><th>Date</th><th>Item</th><th>Customer</th><th>Status</th><th>Total</th><th>Balance</th></tr></thead><tbody>${rows}</tbody></table>`);
+  const rows = rentals.map(r => ({ date: r.rentalDate, item: r.itemName, customer: r.customerName, status: r.status, total: LFS.formatMoney(r.total), balance: LFS.formatMoney(r.balance) }));
+  LFS.printReport("Rentals Report", LFS.tableHtml(rows, [
+    { key: "date", label: "Date" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" },
+    { key: "status", label: "Status" }, { key: "total", label: "Total" }, { key: "balance", label: "Balance" }
+  ]));
 }
+
 function markReturned(rentalId) {
   const rentals = LFS.get("lfs_rentals");
   const r = rentals.find(x => x.id === rentalId);
   if (!r) return;
+  const modeSel = document.getElementById(`settleMode_${rentalId}`);
   r.status = "returned";
   r.actualReturnDate = LFS.todayISO();
+  r.settlementPaymentMode = modeSel ? modeSel.value : "Cash";
   LFS.set("lfs_rentals", rentals);
 
   const items = LFS.get("lfs_rental_items");
@@ -533,7 +770,7 @@ function markReturned(rentalId) {
   if (item) {
     item.status = "available";
     item.timesRented = (item.timesRented || 0) + 1;
-    item.totalEarned = (item.totalEarned || 0) + (r.total - r.deposit); // earnings excl. refundable deposit
+    item.totalEarned = (item.totalEarned || 0) + (r.total - r.deposit);
     LFS.set("lfs_rental_items", items);
   }
   toast("Item marked as returned to stock");
@@ -569,7 +806,7 @@ function renderCustomerRequests() {
         <table>
           <thead><tr><th>Date</th><th>Customer</th><th>Comment</th></tr></thead>
           <tbody>
-            ${reqs.map(r => `<tr><td>${r.date}</td><td>${r.customerName || "-"} <br><span class="text-soft">${r.customerPhone || ""}</span></td><td>${escapeHtml(r.comment)}</td></tr>`).join("") || `<tr><td colspan="3" class="text-soft">No notes yet.</td></tr>`}
+            ${reqs.map(r => `<tr><td>${r.date}</td><td>${escapeHtml(r.customerName) || "-"} <br><span class="text-soft">${r.customerPhone || ""}</span></td><td>${escapeHtml(r.comment)}</td></tr>`).join("") || `<tr><td colspan="3" class="text-soft">No notes yet.</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -586,10 +823,76 @@ function submitRequest(e) {
     customerPhone: document.getElementById("reqPhone").value.trim(),
     customerName: document.getElementById("reqName").value.trim(),
     comment: document.getElementById("reqComment").value.trim(),
-    loggedBy: "Sales Person"
+    loggedBy: LFS.currentEmployeeName() || "Sales Person"
   });
   LFS.set("lfs_customer_requests", reqs);
   toast("Note saved");
+  renderTab();
+}
+
+/* ============================================================
+   DAILY EXPENSES (sales-side entry, feeds Admin > Expenses)
+   ============================================================ */
+function renderDailyExpenses() {
+  const staff = LFS.get("lfs_staff").filter(s => s.active);
+  const currentEmp = LFS.currentEmployeeName();
+  const today = LFS.todayISO();
+  const mine = LFS.get("lfs_expenses").filter(e => e.source === "sales_person" && e.date === today).slice().reverse();
+  return `
+    <div class="card">
+      <h2>Log Daily Shop Expense</h2>
+      <p class="text-soft">Small day-to-day expenses (e.g. cleaning supplies, packaging, tea/snacks for staff). These appear in Admin &gt; Expenses &gt; Log Store Monthly Expense automatically.</p>
+      <form id="dailyExpenseForm">
+        <div class="grid cols-2">
+          <div class="field">
+            <label>Sales Person *</label>
+            <select id="deEmployee" required>
+              <option value="">-- Select employee --</option>
+              ${staff.map(s => `<option value="${escapeHtml(s.name)}" ${s.name === currentEmp ? "selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}
+            </select>
+          </div>
+          <div class="field">
+            <label>Amount (₹) *</label>
+            <input type="number" id="deAmount" min="0" required>
+          </div>
+        </div>
+        <div class="field">
+          <label>Description *</label>
+          <input type="text" id="deDesc" required placeholder="e.g. Packaging covers, tea for staff">
+        </div>
+        <button class="btn btn-primary" type="submit">Save Expense</button>
+      </form>
+    </div>
+    <div class="card">
+      <h3>Logged Today</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time Logged</th><th>Employee</th><th>Description</th><th>Amount</th></tr></thead>
+          <tbody>${mine.map(e => `<tr><td>${new Date(e.loggedAt || Date.now()).toLocaleTimeString()}</td><td>${escapeHtml(e.loggedBy || "")}</td><td>${escapeHtml(e.description)}</td><td>${LFS.formatMoney(e.amount)}</td></tr>`).join("") || `<tr><td colspan="4" class="text-soft">Nothing logged today yet.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+function submitDailyExpense(e) {
+  e.preventDefault();
+  const employee = document.getElementById("deEmployee").value;
+  if (!employee) { toast("Please select the sales person"); return; }
+  LFS.setCurrentEmployeeName(employee);
+  const expenses = LFS.get("lfs_expenses");
+  const date = LFS.todayISO();
+  expenses.push({
+    id: LFS.uid("exp"),
+    category: "Daily Shop Expense",
+    description: document.getElementById("deDesc").value.trim(),
+    amount: Number(document.getElementById("deAmount").value) || 0,
+    date, month: date.slice(0, 7),
+    source: "sales_person",
+    loggedBy: employee,
+    loggedAt: Date.now()
+  });
+  LFS.set("lfs_expenses", expenses);
+  toast("Expense logged");
   renderTab();
 }
 
@@ -625,7 +928,7 @@ function renderCatalog() {
           <div class="img-wrap">${i.imageDataUrl ? `<img src="${i.imageDataUrl}">` : "L"}</div>
           <div class="info">
             <span class="badge ${i.status === 'available' ? 'badge-available' : 'badge-rented'}">${i.status === 'available' ? 'Available' : 'Rented Out'}</span>
-            <h4>${i.itemName}</h4>
+            <h4>${escapeHtml(i.itemName)}</h4>
             <div class="text-soft">${i.itemCode}</div>
             <div class="price">${LFS.formatMoney(i.dailyRate)}/day</div>
           </div>
@@ -638,13 +941,13 @@ function renderCatalog() {
 
 function printCatalogReport() {
   const items = LFS.get("lfs_rental_items");
-  const rows = items.map(i => `<tr><td>${escapeHtml(i.itemName)}</td><td>${i.itemCode}</td><td>${i.category}</td><td>${LFS.formatMoney(i.dailyRate)}</td><td>${i.status === "available" ? "Available" : "Rented Out"}</td></tr>`).join("") || `<tr><td colspan="5">No items.</td></tr>`;
-  LFS.printReport("Jewellery Status &amp; Catalog", `<table><thead><tr><th>Item</th><th>Code</th><th>Category</th><th>Rate/Day</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`);
+  const rows = items.map(i => ({ item: i.itemName, code: i.itemCode, category: i.category, rate: LFS.formatMoney(i.dailyRate), status: i.status === "available" ? "Available" : "Rented Out" }));
+  LFS.printReport("Jewellery Status &amp; Catalog", LFS.tableHtml(rows, [
+    { key: "item", label: "Item" }, { key: "code", label: "Code" }, { key: "category", label: "Category" },
+    { key: "rate", label: "Rate/Day" }, { key: "status", label: "Status" }
+  ]));
 }
-function setCatalogFilter(key, value) {
-  CATALOG_FILTER[key] = value;
-  renderTab();
-}
+function setCatalogFilter(key, value) { CATALOG_FILTER[key] = value; renderTab(); }
 
 function openImageZoom(itemId) {
   const item = LFS.get("lfs_rental_items").find(i => i.id === itemId);
@@ -653,7 +956,7 @@ function openImageZoom(itemId) {
     <div class="modal-backdrop" onclick="if(event.target===this) closeZoom()">
       <div class="modal">
         <button class="modal-close" onclick="closeZoom()">&times;</button>
-        <h3>${item.itemName}</h3>
+        <h3>${escapeHtml(item.itemName)}</h3>
         ${item.imageDataUrl ? `<img src="${item.imageDataUrl}">` : `<div class="img-wrap" style="height:220px;">L</div>`}
         <p class="text-soft mt-8">${item.itemCode} · ${item.itemType} · ${item.category}</p>
         <p><span class="badge ${item.status === 'available' ? 'badge-available' : 'badge-rented'}">${item.status === 'available' ? 'Available' : 'Rented Out'}</span></p>
@@ -684,4 +987,5 @@ function wireTabEvents() {
   const f1 = document.getElementById("dailySaleForm"); if (f1) f1.addEventListener("submit", submitDailySale);
   const f2 = document.getElementById("rentalForm"); if (f2) f2.addEventListener("submit", submitRental);
   const f3 = document.getElementById("reqForm"); if (f3) f3.addEventListener("submit", submitRequest);
+  const f4 = document.getElementById("dailyExpenseForm"); if (f4) f4.addEventListener("submit", submitDailyExpense);
 }
