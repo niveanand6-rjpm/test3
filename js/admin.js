@@ -49,6 +49,13 @@ function showAdminApp() {
   document.getElementById("adminAppScreen").classList.remove("hidden");
   renderAdminModule();
 }
+// Deliberately checks the LOCAL password only, not the live GitHub-deployed
+// one (unlike the sales/gallery/send-data logins). This device's local
+// settings may hold a password the admin just changed here but hasn't
+// pushed to GitHub yet - always trusting "live" would revert that
+// unpushed change and could lock the admin out of their own console
+// right after setting a new password. See LFS.verifyPasswordLive() in
+// common.js for the full reasoning.
 function attemptAdminLogin(e) {
   e.preventDefault();
   const pw = document.getElementById("adminLoginPassword").value;
@@ -2130,7 +2137,7 @@ function renderSecurityModule() {
   return `
     <div class="card">
       <h2>🔐 Security &amp; Passwords</h2>
-      <p class="text-soft">Both the Sales Person and Admin passwords can be reset here (defaults are <code>sales1111</code> and <code>admin111</code>). Everyone will need to re-enter the new password the next time they open a protected tab.</p>
+      <p class="text-soft">Both the Sales Person and Admin passwords can be reset here (defaults are <code>sales1111</code> and <code>admin111</code>). Sales staff, Send Data, and Gallery logins always check the <strong>live</strong> password published on GitHub first, so once you save a change here (and it's published - see below), everyone gets the new password automatically on their next login, with no need to clear their browser data. The Admin password only checks this device, so changing it here never gets silently undone by an older version elsewhere.</p>
       <form id="securityForm">
         <div class="field"><label>Current Admin Password *</label><input type="password" id="secCurrentAdmin" required></div>
         <div class="grid cols-2">
@@ -2177,6 +2184,7 @@ function saveSecurity(e) {
   const newSendDataUser = document.getElementById("secNewSendDataUser").value.trim();
   const newSendDataPass = document.getElementById("secNewSendDataPass").value;
   const newGalleryPass = document.getElementById("secNewGalleryPass").value;
+  const changedAnything = !!(newSales || newAdmin || newSendDataUser || newSendDataPass || newGalleryPass);
   if (newSales) s.salesPersonPassword = newSales;
   if (newAdmin) s.adminPassword = newAdmin;
   if (newSendDataUser) s.sendDataUsername = newSendDataUser;
@@ -2184,8 +2192,24 @@ function saveSecurity(e) {
   if (newGalleryPass) s.galleryPassword = newGalleryPass;
   LFS.set("lfs_settings", s);
   document.getElementById("securityForm").reset();
-  toast("Credentials updated");
   renderAdminModule();
+
+  // Push the updated credentials straight to GitHub if Sync is already set
+  // up on this device - sales staff and customers check the LIVE deployed
+  // password on every login, so this is what actually makes a new
+  // password "just work" for them without any extra step.
+  if (!changedAnything) { toast("No changes to update"); return; }
+  const cfg = LFS.getGithubConfig();
+  const token = LFS.getGithubToken();
+  if (cfg.owner && cfg.repo && token) {
+    toast("Credentials updated - publishing to GitHub...");
+    LFS.pushKeysToGithub(["lfs_settings"], token, cfg, null).then(({ successCount, failCount }) => {
+      if (failCount === 0) toast("Published to GitHub - staff and customers will get the new password on their next login");
+      else toast("Saved locally, but publishing to GitHub failed - check Backup & Export > GitHub Sync");
+    });
+  } else {
+    toast("Credentials updated locally - set up GitHub Sync in Backup & Export, then push, so staff/customers get this automatically");
+  }
 }
 
 /* ============================================================

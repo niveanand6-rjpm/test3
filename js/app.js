@@ -64,13 +64,19 @@ function showApp() {
   paintEmployeeSelect();
   renderTab();
 }
-function attemptLogin(e) {
+async function attemptLogin(e) {
   e.preventDefault();
   const pw = document.getElementById("loginPassword").value;
-  if (LFS.checkPassword(pw, "salesPersonPassword")) {
+  const btn = document.querySelector("#loginForm button[type=submit]");
+  const originalLabel = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "Checking..."; }
+  const ok = await LFS.verifyPasswordLive(pw, "salesPersonPassword");
+  if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
+  if (ok) {
     LFS.setAuthed("lfs_auth_sales");
     document.getElementById("loginError").classList.add("hidden");
     document.getElementById("loginPassword").value = "";
+    paintHeader(); // in case store name/logo/theme also changed
     showApp();
   } else {
     document.getElementById("loginError").classList.remove("hidden");
@@ -1310,11 +1316,17 @@ function renderSendDataLogin() {
     </div>
   `;
 }
-function attemptSendDataUnlock(e) {
+async function attemptSendDataUnlock(e) {
   e.preventDefault();
   const user = document.getElementById("sdLoginUser").value.trim();
   const pass = document.getElementById("sdLoginPass").value;
-  const s = LFS.get("lfs_settings");
+  const btn = document.querySelector("#sendDataLoginForm button[type=submit]");
+  const originalLabel = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "Checking..."; }
+  const live = await LFS.fetchLiveSettings();
+  if (live) LFS.set("lfs_settings", live);
+  const s = live || LFS.get("lfs_settings");
+  if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
   if (user === (s.sendDataUsername || "") && pass === (s.sendDataPassword || "") && user) {
     LFS.setAuthed("lfs_auth_senddata");
     renderTab();
@@ -1368,11 +1380,17 @@ function pushSalesDataToGithub(e) {
       </div>
     </div>
   `;
-  document.getElementById("sendDataConfirmForm").addEventListener("submit", (ev) => {
+  document.getElementById("sendDataConfirmForm").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const user = document.getElementById("sdConfirmUser").value.trim();
     const pass = document.getElementById("sdConfirmPass").value;
-    const s = LFS.get("lfs_settings");
+    const confirmBtn = ev.target.querySelector('button[type=submit]');
+    const originalLabel = confirmBtn ? confirmBtn.textContent : "";
+    if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = "Checking..."; }
+    const live = await LFS.fetchLiveSettings();
+    if (live) LFS.set("lfs_settings", live);
+    const s = live || LFS.get("lfs_settings");
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = originalLabel; }
     if (user === (s.sendDataUsername || "") && pass === (s.sendDataPassword || "") && user) {
       closeSendDataConfirm();
       actuallySendSalesData(cfg, token, user);

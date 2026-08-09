@@ -358,6 +358,42 @@ const LFS = (() => {
     const stored = settings[settingsKey];
     return String(input) === String(stored);
   }
+
+  /* ---------- live password verification ----------
+     Sales staff and customers never edit store settings themselves - only
+     the admin does, then pushes to GitHub. So for their logins we check
+     the password against what's actually deployed on GitHub Pages RIGHT
+     NOW first (bypassing any stale local cache from before the admin last
+     changed it), and only fall back to the locally cached copy if that
+     fetch fails (offline, or running locally without a server). On a
+     successful live check we also refresh the local cache, so the rest of
+     the page immediately reflects the latest store settings too.
+
+     Deliberately NOT used for the admin's own login (see attemptAdminLogin
+     in admin.js) - the admin's device may hold locally-changed settings
+     that haven't been pushed to GitHub yet, and always trusting "live"
+     there would silently revert those unpushed changes and could lock the
+     admin out of their own console right after they change their own
+     password.
+  */
+  async function fetchLiveSettings() {
+    try {
+      const res = await fetch("data/settings.json?_=" + Date.now(), { cache: "no-store" });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (e) {
+      return null; // offline, no server, or blocked - caller falls back to local
+    }
+  }
+  async function verifyPasswordLive(inputPassword, settingsKey) {
+    const live = await fetchLiveSettings();
+    if (live && typeof live === "object") {
+      set("lfs_settings", live);
+      return String(inputPassword) === String(live[settingsKey] || "");
+    }
+    return checkPassword(inputPassword, settingsKey);
+  }
+
   function isAuthed(flag) { return sessionStorage.getItem(flag) === "1"; }
   function setAuthed(flag) { sessionStorage.setItem(flag, "1"); }
   function logout(flag) { sessionStorage.removeItem(flag); }
@@ -737,7 +773,7 @@ const LFS = (() => {
     scheduleAutoBackup, toCSV, downloadCSV, parseCSV, parseSpreadsheetFile,
     downloadPDF, printReport, tableHtml,
     isValidPhone, isValidEmail, isValidAmount,
-    checkPassword, isAuthed, setAuthed, logout, resetAppData,
+    checkPassword, fetchLiveSettings, verifyPasswordLive, isAuthed, setAuthed, logout, resetAppData,
     formatMoney, todayISO, daysBetween, formatIST, nowISO, normalizeSocialUrl, paintFooter, initGoTop, scrollToTop,
     rentalNetRevenue, applyTheme, DEFAULT_THEME, FONT_PAIRS, FONT_SIZES,
     getGithubConfig, saveGithubConfig, getGithubToken, setGithubToken, clearGithubToken, pushKeysToGithub, pullKeyFromGithub, SALES_PUSH_KEYS,
@@ -759,7 +795,7 @@ const LFS_EVENT_TYPES = ["Marriage","Baby Shower","Reception","Engagement","Nami
 /* Build marker - open DevTools Console on any device and check this value
    against the version query string on index.html/admin.html's <script> tags
    to confirm the browser isn't showing a stale cached copy of the app. */
-const LFS_BUILD_VERSION = "2026-08-25";
+const LFS_BUILD_VERSION = "2026-08-26";
 console.info("Lakshmi Fancy Store build:", LFS_BUILD_VERSION);
 
 /* Shared recovery action wired to the "Trouble logging in?" link on both

@@ -1,6 +1,31 @@
 # Lakshmi Fancy Store - Store Management SPA (v15)
 
-## Latest updates (2026-08-25) - Magic cursor/touch trail
+## Latest updates (2026-08-26) - Passwords now sync automatically, not just on request
+
+- **Sales, Send Data, and Gallery logins now check the live GitHub-deployed
+  password first**, every time - not the browser's local cache. Falls back
+  to the local cache only if the live check fails (offline, or running
+  without a server). This means a returning customer or a sales device
+  gets a newly-changed password **automatically**, with no need to know
+  about or click "Reset app data" at all - that link stays as a fallback
+  for other kinds of staleness, but is no longer needed for this specific
+  problem.
+- **Admin's own login intentionally still checks only this device** - the
+  admin's browser may hold a locally-changed password that hasn't been
+  pushed to GitHub yet, and always trusting "live" there could silently
+  revert that change or lock the admin out of their own console right
+  after setting a new password. Documented directly in the code.
+- **Admin > Security now auto-publishes to GitHub** the moment you save a
+  password change, if GitHub Sync is already configured on that device
+  (Backup & Export) - no separate manual push step needed. If GitHub Sync
+  isn't set up yet, you get a clear message saying so instead of a
+  silent no-op.
+- Verified the live-check logic against three real scenarios (customer
+  has the new password published and types it correctly; customer still
+  types the old, now-invalid password; device is offline and falls back
+  to its local cache) - all behave correctly.
+
+## Previous updates (2026-08-25) - Magic cursor/touch trail
 
 - **Sparkles, rings, and celebration emoji now follow the pointer** across
   the whole gallery page - the mouse cursor on desktop, and the finger on

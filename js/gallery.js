@@ -223,12 +223,18 @@ function confirmResetGalleryData(e) {
   if (ok) LFS.resetAppData();
 }
 
-function attemptGalleryUnlock(e) {
+async function attemptGalleryUnlock(e) {
   e.preventDefault();
   const pw = document.getElementById("galleryPasswordInput").value;
-  if (LFS.checkPassword(pw, "galleryPassword")) {
+  const btn = document.querySelector("#galleryLoginForm button[type=submit]");
+  const originalLabel = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "Checking..."; }
+  const ok = await LFS.verifyPasswordLive(pw, "galleryPassword");
+  if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
+  if (ok) {
     LFS.setAuthed("lfs_auth_gallery");
     document.getElementById("galleryLoginError").classList.add("hidden");
+    paintGalleryBrand(); // in case the store name/logo also changed since this browser last visited
     showGalleryScreen();
   } else {
     document.getElementById("galleryLoginError").classList.remove("hidden");
