@@ -136,6 +136,23 @@
       "rental"
     ],
     "appliesToCategories": [],
+    "enabled": false,
+    "isDefault": false
+  },
+  {
+    "id": "promo_msm8ivte05fws",
+    "name": "HELEEEEEEEEEEEEE",
+    "discountPercent": 10,
+    "recurring": false,
+    "month": null,
+    "day": null,
+    "fromDate": "2026-08-09",
+    "toDate": "2026-08-11",
+    "appliesToModules": [
+      "dailySale",
+      "rental"
+    ],
+    "appliesToCategories": [],
     "enabled": true,
     "isDefault": false
   }
