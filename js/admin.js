@@ -2157,7 +2157,7 @@ function saveSecurity(e) {
 function renderBackupModule() {
   const s = LFS.get("lfs_settings");
   const lastBackup = localStorage.getItem("lfs_last_backup") || "Never";
-  const ghCfg = getGithubConfig();
+  const ghCfg = LFS.getGithubConfig();
   const hasToken = !!localStorage.getItem("lfs_github_token");
   const lastPush = localStorage.getItem("lfs_github_last_push") || "Never";
   return `
@@ -2185,7 +2185,7 @@ function renderBackupModule() {
     </div>
     <div class="card">
       <h2>🐙 GitHub Sync (Interim - Manual Push)</h2>
-      <p class="text-soft">Pushes this device's current data straight into your GitHub repo's <code>data/</code> folder using the GitHub API, so you don't have to manually download and re-upload each file. This is a <strong>one-way, on-demand</strong> push from this device - it does not pull other devices' changes, and it isn't automatic. Read the Help panel below before using it.</p>
+      <p class="text-soft">Pushes <strong>all</strong> of this device's data - including store settings, staff, promotions, loyalty rules, and inventory - straight into your GitHub repo's <code>data/</code> folder. This is a <strong>one-way, on-demand</strong> push from this device - it does not pull other devices' changes, and it isn't automatic. Sales staff have their own, narrower "Send Data" tab that only pushes sales/rental/customer records, never store configuration. Read the Help panel below before using it.</p>
       <form id="githubSyncForm">
         <div class="grid cols-2">
           <div class="field"><label>Repo Owner</label><input type="text" id="ghOwner" placeholder="e.g. yourusername" value="${ghCfg.owner || ""}"></div>
@@ -2219,16 +2219,10 @@ function renderBackupModule() {
     </div>
   `;
 }
-function getGithubConfig() {
-  try { return JSON.parse(localStorage.getItem("lfs_github_config") || "{}"); } catch (e) { return {}; }
-}
 function clearGithubToken() {
-  localStorage.removeItem("lfs_github_token");
+  LFS.clearGithubToken();
   toast("Saved GitHub token cleared from this device");
   renderAdminModule();
-}
-function utf8ToBase64(str) {
-  return btoa(unescape(encodeURIComponent(str)));
 }
 async function pushAllToGithub(e) {
   if (e) e.preventDefault();
@@ -2239,12 +2233,12 @@ async function pushAllToGithub(e) {
   const tokenInput = document.getElementById("ghToken").value.trim();
 
   if (!owner || !repo) { toast("Enter the repo owner and name first"); return; }
-  const savedToken = localStorage.getItem("lfs_github_token") || "";
-  const token = tokenInput || savedToken;
+  const token = tokenInput || LFS.getGithubToken();
   if (!token) { toast("Enter a Personal Access Token first"); return; }
 
-  localStorage.setItem("lfs_github_config", JSON.stringify({ owner, repo, branch, pathPrefix }));
-  if (tokenInput) localStorage.setItem("lfs_github_token", tokenInput);
+  const cfg = { owner, repo, branch, pathPrefix };
+  LFS.saveGithubConfig(cfg);
+  if (tokenInput) LFS.setGithubToken(tokenInput);
 
   const statusEl = document.getElementById("githubSyncStatus");
   statusEl.innerHTML = "";
@@ -2257,47 +2251,7 @@ async function pushAllToGithub(e) {
   };
 
   log("Starting push to " + owner + "/" + repo + " (" + branch + ")...");
-  let successCount = 0, failCount = 0;
-
-  for (const key of LFS.ALL_KEYS) {
-    const filename = LFS.SEED_MAP[key].split("/").pop();
-    const filePath = pathPrefix + "/" + filename;
-    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
-    try {
-      let sha = null;
-      const getRes = await fetch(`${apiUrl}?ref=${encodeURIComponent(branch)}`, {
-        headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
-      });
-      if (getRes.ok) {
-        const getData = await getRes.json();
-        sha = getData.sha;
-      } else if (getRes.status !== 404) {
-        const errData = await getRes.json().catch(() => ({}));
-        throw new Error(`check failed (${getRes.status}): ${errData.message || getRes.statusText}`);
-      }
-      const content = JSON.stringify(LFS.get(key), null, 2);
-      const body = {
-        message: `Update ${filePath} via Lakshmi Fancy Store admin sync`,
-        content: utf8ToBase64(content),
-        branch
-      };
-      if (sha) body.sha = sha;
-      const putRes = await fetch(apiUrl, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-      if (!putRes.ok) {
-        const errData = await putRes.json().catch(() => ({}));
-        throw new Error(`push failed (${putRes.status}): ${errData.message || putRes.statusText}`);
-      }
-      log(`✓ ${filePath}`);
-      successCount++;
-    } catch (err) {
-      log(`✗ ${filePath}: ${err.message}`, true);
-      failCount++;
-    }
-  }
+  const { successCount, failCount } = await LFS.pushKeysToGithub(LFS.ALL_KEYS, token, cfg, log);
 
   log(`Done. ${successCount} succeeded, ${failCount} failed.`);
   if (failCount === 0) {

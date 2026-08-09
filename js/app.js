@@ -93,6 +93,7 @@ function renderTab() {
   else if (CURRENT_TAB === "catalog") main.innerHTML = renderCatalog();
   else if (CURRENT_TAB === "expenses") main.innerHTML = renderDailyExpenses();
   else if (CURRENT_TAB === "summary") main.innerHTML = renderRecentSalesSummary();
+  else if (CURRENT_TAB === "sendData") main.innerHTML = renderSendData();
   wireTabEvents();
 }
 
@@ -1235,6 +1236,96 @@ function downloadRecentSummaryCSV() {
 }
 
 /* ============================================================
+   SEND DATA - sales staff's own GitHub push, scoped to only the
+   records sales staff actually generate (never store settings, staff,
+   promotions, loyalty rules, rental rates/commission, or the image
+   library, which stay admin-only so a stale sales-device cache can
+   never overwrite the admin's real configuration).
+   ============================================================ */
+function renderSendData() {
+  const ghCfg = LFS.getGithubConfig();
+  const hasToken = !!LFS.getGithubToken();
+  const lastPush = localStorage.getItem("lfs_github_last_push_sales") || "Never";
+  return `
+    <div class="card">
+      <h2>🐙 Send Data to GitHub</h2>
+      <p class="text-soft">Pushes <strong>this device's</strong> Daily Sales, Rentals, Expenses, Customers, Customer Notes, and Stock quantities straight into the shop's GitHub repo. It does not touch store settings, staff records, promotions, or pricing - those stay admin-only. This is a one-way, on-demand push - it doesn't pull other devices' data.</p>
+      <form id="sendDataForm">
+        <div class="grid cols-2">
+          <div class="field"><label>Repo Owner</label><input type="text" id="sdGhOwner" placeholder="e.g. yourusername" value="${ghCfg.owner || ""}"></div>
+          <div class="field"><label>Repo Name</label><input type="text" id="sdGhRepo" placeholder="e.g. lakshmi-fancy-store" value="${ghCfg.repo || ""}"></div>
+        </div>
+        <div class="grid cols-2">
+          <div class="field"><label>Branch</label><input type="text" id="sdGhBranch" value="${ghCfg.branch || "main"}"></div>
+          <div class="field"><label>Path Prefix</label><input type="text" id="sdGhPathPrefix" value="${ghCfg.pathPrefix || "data"}"></div>
+        </div>
+        <div class="field">
+          <label>Personal Access Token</label>
+          <input type="password" id="sdGhToken" placeholder="${hasToken ? "Token saved on this device (leave blank to keep it)" : "Ask the admin for a token scoped to this repo only"}">
+        </div>
+        <div class="flex gap-8 mt-8">
+          <button class="btn btn-gold" type="submit">Save &amp; Send My Sales Data Now</button>
+          <button type="button" class="btn btn-outline" onclick="clearSalesGithubToken()">Clear Saved Token</button>
+        </div>
+      </form>
+      <p class="text-soft mt-8">Last successful send from this device: ${lastPush === "Never" ? "Never" : new Date(lastPush).toLocaleString()}</p>
+      <div id="sendDataStatus" class="mt-8"></div>
+      <details class="help-panel">
+        <summary>Help - what this does and doesn't do</summary>
+        <div class="help-body">
+          <p><strong>What gets sent:</strong> Daily Sales, Rentals, Expenses, Customers, Customer Notes, and current Stock quantities - the records this device actually creates.</p>
+          <p><strong>What never gets sent from here:</strong> store settings, staff/attendance, promotions, loyalty and points rules, rental item rates/commission, and the image library. Only the Admin console can update those, so an out-of-date sales device can never accidentally overwrite the admin's setup.</p>
+          <p><strong>Ask the admin for the repo details and your own token</strong> - each device should have its own Personal Access Token (scoped to just this repo, "Contents: Read and write" only) so it can be individually revoked if a phone or tablet is lost. Don't share one token across multiple devices.</p>
+          <p><strong>This is a manual push, not live sync</strong> - send your data at the end of a shift or whenever you want it backed up. Other devices (including the admin's) won't see it until they resync from GitHub.</p>
+        </div>
+      </details>
+    </div>
+  `;
+}
+function clearSalesGithubToken() {
+  LFS.clearGithubToken();
+  toast("Saved GitHub token cleared from this device");
+  renderTab();
+}
+async function pushSalesDataToGithub(e) {
+  if (e) e.preventDefault();
+  const owner = document.getElementById("sdGhOwner").value.trim();
+  const repo = document.getElementById("sdGhRepo").value.trim();
+  const branch = document.getElementById("sdGhBranch").value.trim() || "main";
+  const pathPrefix = document.getElementById("sdGhPathPrefix").value.trim().replace(/\/$/, "") || "data";
+  const tokenInput = document.getElementById("sdGhToken").value.trim();
+
+  if (!owner || !repo) { toast("Enter the repo owner and name first"); return; }
+  const token = tokenInput || LFS.getGithubToken();
+  if (!token) { toast("Enter a Personal Access Token first"); return; }
+
+  const cfg = { owner, repo, branch, pathPrefix };
+  LFS.saveGithubConfig(cfg);
+  if (tokenInput) LFS.setGithubToken(tokenInput);
+
+  const statusEl = document.getElementById("sendDataStatus");
+  statusEl.innerHTML = "";
+  const log = (msg, isError) => {
+    const line = document.createElement("div");
+    line.textContent = msg;
+    line.style.fontSize = ".85rem";
+    if (isError) line.style.color = "var(--terracotta)";
+    statusEl.appendChild(line);
+  };
+
+  log("Sending sales data to " + owner + "/" + repo + " (" + branch + ")...");
+  const { successCount, failCount } = await LFS.pushKeysToGithub(LFS.SALES_PUSH_KEYS, token, cfg, log);
+
+  log(`Done. ${successCount} succeeded, ${failCount} failed.`);
+  if (failCount === 0) {
+    localStorage.setItem("lfs_github_last_push_sales", new Date().toISOString());
+    toast(`Sales data sent to GitHub successfully (${successCount} files)`);
+  } else {
+    toast(`Send finished with ${failCount} error(s) - see the log below`);
+  }
+}
+
+/* ============================================================
    CATALOG / JEWELLERY STATUS
    ============================================================ */
 let CATALOG_FILTER = { category: "", search: "" };
@@ -1326,4 +1417,5 @@ function wireTabEvents() {
   const f2 = document.getElementById("rentalForm"); if (f2) f2.addEventListener("submit", submitRental);
   const f3 = document.getElementById("reqForm"); if (f3) f3.addEventListener("submit", submitRequest);
   const f4 = document.getElementById("dailyExpenseForm"); if (f4) f4.addEventListener("submit", submitDailyExpense);
+  const f5 = document.getElementById("sendDataForm"); if (f5) f5.addEventListener("submit", pushSalesDataToGithub);
 }

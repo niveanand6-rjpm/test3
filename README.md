@@ -1,6 +1,24 @@
 # Lakshmi Fancy Store - Store Management SPA
 
-## Latest updates (2026-08-18)
+## Latest updates (2026-08-19)
+
+- **"Send Data" tab for sales staff** - a new sales-app tab lets each
+  device push its own data to GitHub, same mechanism as the admin's
+  GitHub Sync but **deliberately scoped**: sales devices can only push
+  Daily Sales, Rentals, Expenses, Customers, Customer Notes, and current
+  Stock quantities. They can never push store settings, staff records,
+  promotions, loyalty/points rules, rental rates/commission, or the image
+  library - those stay admin-only, so a sales device's possibly-stale
+  local cache can never overwrite the admin's actual configuration. The
+  GitHub-push engine itself was refactored into `common.js` so both apps
+  share the same tested code instead of duplicating it.
+- Each device (admin or sales) should have **its own** Personal Access
+  Token, scoped to "Contents: Read and write" on this one repo only, so
+  any single device can be revoked individually if lost or a staff member
+  leaves - see the in-app Help panel on both the admin and sales "Send
+  Data" screens.
+
+## Previous updates (2026-08-18)
 
 - **GitHub Sync (interim manual push)** - new card in Admin > Backup &
   Export. Enter your repo owner/name/branch and a fine-grained Personal

@@ -535,6 +535,85 @@ const LFS = (() => {
     document.documentElement.style.fontSize = (FONT_SIZES[t.fontSize] || 16) + "px";
   }
 
+  /* ---------- GitHub Sync (interim manual push) ----------
+     Shared by Admin's "Backup & Export > GitHub Sync" (pushes everything)
+     and the sales app's "Send Data" tab (pushes ONLY the modules sales
+     staff actually generate). Deliberately scoped this way because a
+     sales device's local cache of admin-owned config - store settings,
+     staff records, promotions, loyalty rules, rental rates/commission,
+     the image library - can be stale, and must never be allowed to
+     overwrite what the admin actually configured. Sales devices may push
+     sales/rentals/expenses/customers/customer-notes, and stock quantities
+     (since every sale decrements them) - nothing else.
+  */
+  const SALES_PUSH_KEYS = ["lfs_sales", "lfs_rentals", "lfs_expenses", "lfs_customers", "lfs_customer_requests", "lfs_inventory"];
+
+  function getGithubConfig() {
+    try { return JSON.parse(localStorage.getItem("lfs_github_config") || "{}"); } catch (e) { return {}; }
+  }
+  function saveGithubConfig(cfg) {
+    localStorage.setItem("lfs_github_config", JSON.stringify(cfg));
+  }
+  function getGithubToken() {
+    return localStorage.getItem("lfs_github_token") || "";
+  }
+  function setGithubToken(token) {
+    if (token) localStorage.setItem("lfs_github_token", token);
+  }
+  function clearGithubToken() {
+    localStorage.removeItem("lfs_github_token");
+  }
+  function utf8ToBase64(str) {
+    return btoa(unescape(encodeURIComponent(str)));
+  }
+
+  // Pushes the given storage keys to GitHub via the Contents API (create or
+  // update, sequentially to stay well under rate limits). `onLog(line, isError)`
+  // is called after each file. Resolves to { successCount, failCount }.
+  async function pushKeysToGithub(keys, token, cfg, onLog) {
+    const owner = (cfg.owner || "").trim();
+    const repo = (cfg.repo || "").trim();
+    const branch = (cfg.branch || "main").trim();
+    const pathPrefix = ((cfg.pathPrefix || "data").trim()).replace(/\/$/, "");
+    let successCount = 0, failCount = 0;
+
+    for (const key of keys) {
+      const filename = SEED_MAP[key].split("/").pop();
+      const filePath = pathPrefix + "/" + filename;
+      const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
+      try {
+        let sha = null;
+        const getRes = await fetch(`${apiUrl}?ref=${encodeURIComponent(branch)}`, {
+          headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
+        });
+        if (getRes.ok) {
+          sha = (await getRes.json()).sha;
+        } else if (getRes.status !== 404) {
+          const errData = await getRes.json().catch(() => ({}));
+          throw new Error(`check failed (${getRes.status}): ${errData.message || getRes.statusText}`);
+        }
+        const content = JSON.stringify(get(key), null, 2);
+        const body = { message: `Update ${filePath} via Lakshmi Fancy Store sync`, content: utf8ToBase64(content), branch };
+        if (sha) body.sha = sha;
+        const putRes = await fetch(apiUrl, {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        if (!putRes.ok) {
+          const errData = await putRes.json().catch(() => ({}));
+          throw new Error(`push failed (${putRes.status}): ${errData.message || putRes.statusText}`);
+        }
+        if (onLog) onLog(`✓ ${filePath}`, false);
+        successCount++;
+      } catch (err) {
+        if (onLog) onLog(`✗ ${filePath}: ${err.message}`, true);
+        failCount++;
+      }
+    }
+    return { successCount, failCount };
+  }
+
   /* ---------- social link normalization ----------
      Admin can type a full URL or just a handle (e.g. "@lakshmifancystore")
      - this builds a sensible clickable link either way.
@@ -591,6 +670,7 @@ const LFS = (() => {
     checkPassword, isAuthed, setAuthed, logout, resetAppData,
     formatMoney, todayISO, daysBetween, formatIST, nowISO, normalizeSocialUrl, paintFooter, initGoTop, scrollToTop,
     rentalNetRevenue, applyTheme, DEFAULT_THEME, FONT_PAIRS, FONT_SIZES,
+    getGithubConfig, saveGithubConfig, getGithubToken, setGithubToken, clearGithubToken, pushKeysToGithub, SALES_PUSH_KEYS,
     currentEmployeeName, setCurrentEmployeeName,
     activePromotionToday, promotionAppliesTo, anyOtherPromotionEnabled,
     PAYMENT_MODES, REFERRAL_SOURCES
@@ -609,7 +689,7 @@ const LFS_EVENT_TYPES = ["Marriage","Baby Shower","Reception","Engagement","Nami
 /* Build marker - open DevTools Console on any device and check this value
    against the version query string on index.html/admin.html's <script> tags
    to confirm the browser isn't showing a stale cached copy of the app. */
-const LFS_BUILD_VERSION = "2026-08-18";
+const LFS_BUILD_VERSION = "2026-08-19";
 console.info("Lakshmi Fancy Store build:", LFS_BUILD_VERSION);
 
 /* Shared recovery action wired to the "Trouble logging in?" link on both
