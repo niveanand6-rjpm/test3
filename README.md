@@ -1,6 +1,26 @@
 # Lakshmi Fancy Store - Store Management SPA (v15)
 
-## Latest updates (2026-08-22) - Customer Collection Gallery
+## Latest updates (2026-08-23)
+
+- **Gallery gets the "stale cached password" fix too.** Added the same
+  "Trouble logging in? / Password not working?" reset link to
+  `gallery.html` that the sales and admin logins already had - a
+  returning customer's browser can be holding an old gallery password
+  from before the admin last changed it (a browser only re-seeds its
+  local data once), so this clears it and reloads fresh. Worded for a
+  customer rather than staff.
+- Fixed `LFS.resetAppData()` (used by all three reset links) to also
+  clear the two newer session flags - Send Data and Gallery - that had
+  been added since it was first written, so it now fully resets every
+  login state, not just the original sales/admin ones.
+- **Important operational note:** the reset only helps if the *deployed*
+  `data/settings.json` on GitHub actually has the new password - so
+  after changing the Sales, Admin, Send Data, or Gallery password in
+  Admin > Security, remember to push that change via Backup & Export >
+  GitHub Sync. Otherwise a customer's "device reset" will just re-seed
+  the same old password from GitHub.
+
+## Previous updates (2026-08-22) - Customer Collection Gallery
 
 - **New: `gallery.html`** - a standalone, password-protected page for
   customers to browse the jewellery collection. Separate from the sales

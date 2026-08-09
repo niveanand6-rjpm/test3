@@ -61,6 +61,17 @@ function showGalleryScreen() {
   populateCategoryOptions();
   renderGalleryGrid();
 }
+// A returning customer's browser may still have the OLD gallery password
+// cached from before the admin last changed it (data only re-seeds into a
+// browser once, the same reason the staff apps have their own reset link).
+// This clears it and reloads so the page picks up the current password
+// and collection data - worded for a customer, not staff.
+function confirmResetGalleryData(e) {
+  if (e) e.preventDefault();
+  const ok = confirm("This refreshes the page with the latest password and collection details from the store. Continue?");
+  if (ok) LFS.resetAppData();
+}
+
 function attemptGalleryUnlock(e) {
   e.preventDefault();
   const pw = document.getElementById("galleryPasswordInput").value;
