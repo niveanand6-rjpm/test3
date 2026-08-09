@@ -103,7 +103,7 @@ function wireAdminEvents() {
       renderAdminModule();
     });
   });
-  const forms = ["stockForm", "rentalInvForm", "staffForm", "attendanceForm", "expenseForm", "customerForm", "loyaltyForm", "personalizationForm", "securityForm", "promoForm", "imageUploadForm", "salesDeptForm"];
+  const forms = ["stockForm", "rentalInvForm", "staffForm", "attendanceForm", "expenseForm", "customerForm", "loyaltyForm", "personalizationForm", "securityForm", "promoForm", "imageUploadForm", "salesDeptForm", "githubSyncForm"];
   forms.forEach(id => {
     const f = document.getElementById(id);
     if (f) f.addEventListener("submit", FORM_HANDLERS[id]);
@@ -2157,6 +2157,9 @@ function saveSecurity(e) {
 function renderBackupModule() {
   const s = LFS.get("lfs_settings");
   const lastBackup = localStorage.getItem("lfs_last_backup") || "Never";
+  const ghCfg = getGithubConfig();
+  const hasToken = !!localStorage.getItem("lfs_github_token");
+  const lastPush = localStorage.getItem("lfs_github_last_push") || "Never";
   return `
     <div class="card">
       <h2>☁️ Auto Backup</h2>
@@ -2181,17 +2184,128 @@ function renderBackupModule() {
       </div>
     </div>
     <div class="card">
-      <h2>📄 CSV Export (for external billing / GST filing)</h2>
-      <div class="grid cols-3">
-        <button class="btn btn-outline btn-sm" onclick="LFS.downloadCSV('sales.csv', LFS.get('lfs_sales'))">Sales CSV</button>
-        <button class="btn btn-outline btn-sm" onclick="LFS.downloadCSV('rentals.csv', LFS.get('lfs_rentals'))">Rentals CSV</button>
-        <button class="btn btn-outline btn-sm" onclick="LFS.downloadCSV('customers.csv', LFS.get('lfs_customers'))">Customers CSV</button>
-        <button class="btn btn-outline btn-sm" onclick="LFS.downloadCSV('expenses.csv', LFS.get('lfs_expenses'))">Expenses CSV</button>
-        <button class="btn btn-outline btn-sm" onclick="LFS.downloadCSV('inventory.csv', LFS.get('lfs_inventory'))">Stock CSV</button>
-        <button class="btn btn-outline btn-sm" onclick="LFS.downloadCSV('rental_items.csv', LFS.get('lfs_rental_items'))">Rental Inventory CSV</button>
-      </div>
+      <h2>🐙 GitHub Sync (Interim - Manual Push)</h2>
+      <p class="text-soft">Pushes this device's current data straight into your GitHub repo's <code>data/</code> folder using the GitHub API, so you don't have to manually download and re-upload each file. This is a <strong>one-way, on-demand</strong> push from this device - it does not pull other devices' changes, and it isn't automatic. Read the Help panel below before using it.</p>
+      <form id="githubSyncForm">
+        <div class="grid cols-2">
+          <div class="field"><label>Repo Owner</label><input type="text" id="ghOwner" placeholder="e.g. yourusername" value="${ghCfg.owner || ""}"></div>
+          <div class="field"><label>Repo Name</label><input type="text" id="ghRepo" placeholder="e.g. lakshmi-fancy-store" value="${ghCfg.repo || ""}"></div>
+        </div>
+        <div class="grid cols-2">
+          <div class="field"><label>Branch</label><input type="text" id="ghBranch" value="${ghCfg.branch || "main"}"></div>
+          <div class="field"><label>Path Prefix</label><input type="text" id="ghPathPrefix" value="${ghCfg.pathPrefix || "data"}"></div>
+        </div>
+        <div class="field">
+          <label>Personal Access Token</label>
+          <input type="password" id="ghToken" placeholder="${hasToken ? "Token saved on this device (leave blank to keep it)" : "Paste a fine-grained token scoped to this repo only"}">
+        </div>
+        <div class="flex gap-8 mt-8">
+          <button class="btn btn-gold" type="submit">Save &amp; Push All Data to GitHub Now</button>
+          <button type="button" class="btn btn-outline" onclick="clearGithubToken()">Clear Saved Token</button>
+        </div>
+      </form>
+      <p class="text-soft mt-8">Last successful push from this device: ${lastPush === "Never" ? "Never" : new Date(lastPush).toLocaleString()}</p>
+      <div id="githubSyncStatus" class="mt-8"></div>
+      <details class="help-panel">
+        <summary>Help - how to set this up safely, and how to use it well</summary>
+        <div class="help-body">
+          <p><strong>1. Create a scoped token.</strong> On GitHub: Settings &gt; Developer settings &gt; Personal access tokens &gt; Fine-grained tokens &gt; Generate new token. Set "Repository access" to <em>only</em> this one repo, set an expiry (90 days is reasonable), and under Permissions grant <em>only</em> "Contents: Read and write". Don't use a classic all-repo token here.</p>
+          <p><strong>2. Only use this on a trusted device.</strong> The token is stored in this browser's local storage so it doesn't need to be re-entered every time - that also means anyone with access to this device's browser dev tools could read it. Use it on the shop owner/admin's own device, not a shared or public one.</p>
+          <p><strong>3. This is one-way and manual, not live sync.</strong> Clicking the button pushes <em>this device's</em> current data up to GitHub - it does not pull in anything other devices have entered, and other devices won't see the update until they clear their local data (Backup &amp; Export won't do this - use the "Reset app data" link on their login screen) and reload, which re-seeds fresh from GitHub. A good rhythm: treat this admin device as the source of truth, push at the end of each day, and have sales devices reset/resync periodically (e.g., each morning) rather than expecting instant sync between them.</p>
+          <p><strong>4. Mind the data your commits will contain.</strong> These JSON files include real customer names, phone numbers, and addresses. Every push becomes a permanent entry in your repo's history - even if you edit or delete the file later, old commits still contain it unless you rewrite history. If this repo is public (which the free tier of GitHub Pages requires unless you're on a paid plan that supports Pages from private repos), that customer data will be publicly visible on the internet indefinitely. Please check your repo's visibility and plan before relying on this, and treat it as private/sensitive data even in a private repo.</p>
+          <p><strong>5. Rotate the token periodically</strong> and revoke it immediately from GitHub if this device is lost, sold, or shared.</p>
+        </div>
+      </details>
     </div>
   `;
+}
+function getGithubConfig() {
+  try { return JSON.parse(localStorage.getItem("lfs_github_config") || "{}"); } catch (e) { return {}; }
+}
+function clearGithubToken() {
+  localStorage.removeItem("lfs_github_token");
+  toast("Saved GitHub token cleared from this device");
+  renderAdminModule();
+}
+function utf8ToBase64(str) {
+  return btoa(unescape(encodeURIComponent(str)));
+}
+async function pushAllToGithub(e) {
+  if (e) e.preventDefault();
+  const owner = document.getElementById("ghOwner").value.trim();
+  const repo = document.getElementById("ghRepo").value.trim();
+  const branch = document.getElementById("ghBranch").value.trim() || "main";
+  const pathPrefix = document.getElementById("ghPathPrefix").value.trim().replace(/\/$/, "") || "data";
+  const tokenInput = document.getElementById("ghToken").value.trim();
+
+  if (!owner || !repo) { toast("Enter the repo owner and name first"); return; }
+  const savedToken = localStorage.getItem("lfs_github_token") || "";
+  const token = tokenInput || savedToken;
+  if (!token) { toast("Enter a Personal Access Token first"); return; }
+
+  localStorage.setItem("lfs_github_config", JSON.stringify({ owner, repo, branch, pathPrefix }));
+  if (tokenInput) localStorage.setItem("lfs_github_token", tokenInput);
+
+  const statusEl = document.getElementById("githubSyncStatus");
+  statusEl.innerHTML = "";
+  const log = (msg, isError) => {
+    const line = document.createElement("div");
+    line.textContent = msg;
+    line.style.fontSize = ".85rem";
+    if (isError) line.style.color = "var(--terracotta)";
+    statusEl.appendChild(line);
+  };
+
+  log("Starting push to " + owner + "/" + repo + " (" + branch + ")...");
+  let successCount = 0, failCount = 0;
+
+  for (const key of LFS.ALL_KEYS) {
+    const filename = LFS.SEED_MAP[key].split("/").pop();
+    const filePath = pathPrefix + "/" + filename;
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
+    try {
+      let sha = null;
+      const getRes = await fetch(`${apiUrl}?ref=${encodeURIComponent(branch)}`, {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
+      });
+      if (getRes.ok) {
+        const getData = await getRes.json();
+        sha = getData.sha;
+      } else if (getRes.status !== 404) {
+        const errData = await getRes.json().catch(() => ({}));
+        throw new Error(`check failed (${getRes.status}): ${errData.message || getRes.statusText}`);
+      }
+      const content = JSON.stringify(LFS.get(key), null, 2);
+      const body = {
+        message: `Update ${filePath} via Lakshmi Fancy Store admin sync`,
+        content: utf8ToBase64(content),
+        branch
+      };
+      if (sha) body.sha = sha;
+      const putRes = await fetch(apiUrl, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      if (!putRes.ok) {
+        const errData = await putRes.json().catch(() => ({}));
+        throw new Error(`push failed (${putRes.status}): ${errData.message || putRes.statusText}`);
+      }
+      log(`✓ ${filePath}`);
+      successCount++;
+    } catch (err) {
+      log(`✗ ${filePath}: ${err.message}`, true);
+      failCount++;
+    }
+  }
+
+  log(`Done. ${successCount} succeeded, ${failCount} failed.`);
+  if (failCount === 0) {
+    localStorage.setItem("lfs_github_last_push", new Date().toISOString());
+    toast(`Pushed all data to GitHub successfully (${successCount} files)`);
+  } else {
+    toast(`GitHub push finished with ${failCount} error(s) - see the log below`);
+  }
 }
 function updateBackupHours(val) {
   const s = LFS.get("lfs_settings");
@@ -2223,5 +2337,6 @@ const FORM_HANDLERS = {
   securityForm: saveSecurity,
   promoForm: savePromotion,
   imageUploadForm: saveImageUpload,
-  salesDeptForm: saveSalesDeptSettings
+  salesDeptForm: saveSalesDeptSettings,
+  githubSyncForm: pushAllToGithub
 };

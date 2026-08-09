@@ -1,6 +1,52 @@
 # Lakshmi Fancy Store - Store Management SPA
 
-## Latest updates (2026-08-17)
+## Latest updates (2026-08-18)
+
+- **GitHub Sync (interim manual push)** - new card in Admin > Backup &
+  Export. Enter your repo owner/name/branch and a fine-grained Personal
+  Access Token once, then click "Save & Push All Data to GitHub Now" to
+  commit every `data/*.json` file straight to your repo via the GitHub API
+  - no manual download-then-upload needed. See "How best to use this"
+  below (also included as an in-app Help panel next to the button).
+
+## How best to use GitHub Sync
+
+This is a **one-way, on-demand push from one device** - not live
+multi-device sync (see the note in the previous update below for why that
+needs a different architecture). Used well, it's still genuinely useful:
+
+1. **Create a scoped token.** GitHub Settings &gt; Developer settings &gt;
+   Personal access tokens &gt; Fine-grained tokens &gt; Generate new token.
+   Restrict "Repository access" to *just* this repo, set an expiry (90
+   days is reasonable), and grant *only* "Contents: Read and write" under
+   Permissions. Don't use a classic all-repo-access token here.
+2. **Only enter the token on a trusted device** - it's saved in that
+   browser's local storage so you don't have to retype it every time,
+   which also means it's readable via that browser's dev tools. Use the
+   shop owner/admin's own device, not a shared or public one. "Clear Saved
+   Token" removes it from that device whenever you want.
+3. **Treat it as end-of-day ritual, not real-time sync.** Push once when
+   you close up (or whenever you want a durable snapshot). Other devices
+   won't automatically see the update - they'd need "Reset app data" on
+   their login screen and a reload to re-seed fresh from GitHub. Good
+   rhythm: the admin device is the source of truth and pushes daily; sales
+   devices reset/resync periodically (e.g. each morning) rather than
+   expecting instant cross-device sync.
+4. **Mind what's in the commits.** These files contain real customer
+   names, phone numbers, and addresses, and every push is a permanent
+   entry in your repo's history (even a later edit doesn't erase it from
+   old commits). Free-tier GitHub Pages requires a *public* repo unless
+   you're on a paid plan that supports Pages from private repos - check
+   your repo's visibility before relying on this, and treat this data as
+   sensitive either way.
+5. **Rotate/revoke the token periodically**, and immediately if the device
+   is lost, sold, or shared.
+
+If you outgrow this (e.g. need several sales devices to see each other's
+entries live), the next step up is a real-time database like Firebase -
+ask any time and I can help migrate to it.
+
+## Previous updates (2026-08-17)
 
 - **Fixed iPad promo banner not showing.** Root cause: animating
   `background-position` on a gradient is unreliably repainted by iOS
