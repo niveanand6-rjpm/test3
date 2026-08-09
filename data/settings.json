@@ -24,6 +24,7 @@
   "adminPassword": "admin111",
   "sendDataUsername": "sendsync",
   "sendDataPassword": "sync1111",
+  "galleryPassword": "gold1111",
   "autoBackupHours": 3,
   "theme": {
     "bg": "#FBF7F1",

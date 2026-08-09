@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Our Collection - Lakshmi Fancy Store</title>
+<meta name="description" content="Browse Lakshmi Fancy Store's imitation jewellery collection - see what's available and what's currently booked.">
+<link rel="stylesheet" href="css/style.css?v=20260822">
+<link rel="stylesheet" href="css/gallery.css?v=20260822">
+</head>
+<body class="gallery-body">
+
+  <!-- ============ PASSWORD GATE ============ -->
+  <div class="gallery-gate" id="galleryGate">
+    <div class="gallery-gate-card">
+      <div class="gate-emoji">💎</div>
+      <h2>Our Jewellery Collection</h2>
+      <p>Enter the password shared by the store to browse our full collection.</p>
+      <form id="galleryLoginForm">
+        <div class="field text-center">
+          <input type="password" id="galleryPasswordInput" placeholder="Enter password" required autofocus style="text-align:center;">
+        </div>
+        <div class="error-msg hidden" id="galleryLoginError">Incorrect password. Please try again.</div>
+        <button class="btn btn-primary mt-16" type="submit" style="width:100%;">✨ View Collection</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ GALLERY SCREEN ============ -->
+  <div id="galleryScreen" class="hidden">
+    <header class="gallery-hero">
+      <div class="hero-sparkles" id="heroSparkles"></div>
+      <div class="hero-content">
+        <span id="heroLogoSlot"></span>
+        <h1 id="heroStoreName">Lakshmi Fancy Store</h1>
+        <p class="hero-tagline">Exquisite Imitation &amp; Bridal Jewellery Collection</p>
+        <div class="hero-stats" id="heroStats"></div>
+      </div>
+    </header>
+
+    <nav class="gallery-filterbar">
+      <div class="filter-chips" id="statusChips">
+        <button class="chip active" data-status="">✨ All</button>
+        <button class="chip" data-status="available">💚 Available Now</button>
+        <button class="chip" data-status="rented">⏳ Booked / Rented</button>
+      </div>
+      <select id="galleryCategory" onchange="onGalleryFilterChange()">
+        <option value="">All Categories</option>
+      </select>
+      <input type="text" id="gallerySearch" placeholder="🔍 Search jewellery..." oninput="onGalleryFilterChange()">
+    </nav>
+
+    <main class="gallery-wrap">
+      <div class="gallery-grid" id="galleryGrid"></div>
+    </main>
+
+    <footer class="site-footer" id="galleryFooter"></footer>
+    <button id="goTopBtn" class="go-top-btn" onclick="LFS.scrollToTop()" title="Go to top" aria-label="Go to top">⬆️</button>
+  </div>
+
+  <div id="lightboxSlot"></div>
+
+  <script src="js/common.js?v=20260822"></script>
+  <script src="js/gallery.js?v=20260822"></script>
+</body>
+</html>

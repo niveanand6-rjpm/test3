@@ -1,6 +1,34 @@
-# Lakshmi Fancy Store - Store Management SPA
+# Lakshmi Fancy Store - Store Management SPA (v15)
 
-## Latest updates (2026-08-21)
+## Latest updates (2026-08-22) - Customer Collection Gallery
+
+- **New: `gallery.html`** - a standalone, password-protected page for
+  customers to browse the jewellery collection. Separate from the sales
+  and admin apps entirely; share the link + a password (set in Admin >
+  Security) with customers directly.
+- **What customers see**: every rental jewellery item with its photo,
+  category, daily rate, and a live status badge - "Available" or
+  "Booked", with the expected-free date shown for anything currently
+  rented. No customer data (names, phone numbers, addresses) is ever
+  shown on this page - it's read-only and jewellery-only.
+- **Filtering**: status chips (All / Available Now / Booked), a category
+  dropdown, and a live search box.
+- **Design**: built to feel like a boutique lookbook - a glowing hero
+  with the store's logo/name and a "pieces available today" counter,
+  twinkling sparkle accents, photo cards with a shine-sweep hover effect
+  and scroll-reveal animation, and a rich lightbox with a WhatsApp/Call
+  CTA (and the store's location QR code, if uploaded) to pull browsers
+  into an in-store visit. All animations use only `transform`/`opacity`/
+  `box-shadow` (the same iOS Safari lesson learned earlier in this
+  project - no `background-position` animations anywhere).
+- **Fully on-brand**: uses the same `LFS.applyTheme()` system as the
+  other two apps, so it automatically reflects whatever colors/fonts the
+  admin has configured in Store Setup.
+- **Admin > Security** now has a "Customer Collection Gallery Password"
+  field (separate from every staff password), plus a ready-to-copy share
+  link and a "Preview Gallery" button.
+
+## Previous updates (2026-08-21)
 
 - **Send Data is now password-protected**, with its own username/password
   set (and reset) by Admin > Security - separate from both the Sales and
@@ -303,13 +331,16 @@ libraries (see below) add PDF export, Excel parsing, and charts.
 ## Files
 
 ```
-index.html            Sales-person app (Daily Sales / Rental / Catalog / Expenses)
-admin.html             Admin console - separate file, its own password
-css/style.css           Shared styling (mobile-first)
-js/common.js            Storage, auth, backup/export/import, CSV/PDF, promotions helper
-js/app.js               Sales-person logic
-js/admin.js             Admin console logic
-data/*.json              Seed data - see table below
+index.html              Sales-person app (Daily Sales / Rental / Catalog / Expenses / Send Data)
+admin.html               Admin console - separate file, its own password
+gallery.html              Customer-facing jewellery collection - separate file, its own password
+css/style.css             Shared styling (mobile-first)
+css/gallery.css            Customer gallery-specific styling (hero, cards, lightbox)
+js/common.js              Storage, auth, backup/export/import, CSV/PDF, GitHub sync, theme
+js/app.js                 Sales-person logic
+js/admin.js               Admin console logic
+js/gallery.js              Customer gallery logic
+data/*.json                Seed data - see table below
 ```
 
 ## CDN libraries used (all loaded via `<script>` tags, nothing to install)

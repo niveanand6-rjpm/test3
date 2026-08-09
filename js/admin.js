@@ -2126,6 +2126,7 @@ function savePersonalization(e) {
    ============================================================ */
 function renderSecurityModule() {
   const s = LFS.get("lfs_settings");
+  const galleryLink = location.origin + location.pathname.replace(/admin\.html$/, "gallery.html");
   return `
     <div class="card">
       <h2>🔐 Security &amp; Passwords</h2>
@@ -2144,10 +2145,27 @@ function renderSecurityModule() {
           <div class="field"><label>New Send Data Password</label><input type="password" id="secNewSendDataPass" placeholder="Leave blank to keep unchanged"></div>
         </div>
 
+        <h3 class="mt-16">💎 Customer Collection Gallery Password</h3>
+        <p class="text-soft">This is the password you share with customers along with the gallery link, so they can browse the jewellery collection and see what's available vs. currently booked. It's separate from every staff password.</p>
+        <div class="field"><label>New Gallery Password</label><input type="password" id="secNewGalleryPass" placeholder="Leave blank to keep unchanged"></div>
+
         <button class="btn btn-primary mt-16" type="submit">Update Credentials</button>
       </form>
+      <div class="success-note mt-16">
+        <div>📎 Share this link with customers: <strong id="galleryShareLink">${galleryLink}</strong></div>
+        <button type="button" class="btn btn-outline btn-sm mt-8" onclick="copyGalleryLink()">Copy Link</button>
+        <a class="btn btn-outline btn-sm mt-8" href="gallery.html" target="_blank" rel="noopener">Preview Gallery ↗</a>
+      </div>
     </div>
   `;
+}
+function copyGalleryLink() {
+  const link = document.getElementById("galleryShareLink").textContent;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(link).then(() => toast("Gallery link copied")).catch(() => toast("Could not copy - please copy manually"));
+  } else {
+    toast("Copy not supported on this browser - please copy manually");
+  }
 }
 function saveSecurity(e) {
   e.preventDefault();
@@ -2158,10 +2176,12 @@ function saveSecurity(e) {
   const newAdmin = document.getElementById("secNewAdmin").value;
   const newSendDataUser = document.getElementById("secNewSendDataUser").value.trim();
   const newSendDataPass = document.getElementById("secNewSendDataPass").value;
+  const newGalleryPass = document.getElementById("secNewGalleryPass").value;
   if (newSales) s.salesPersonPassword = newSales;
   if (newAdmin) s.adminPassword = newAdmin;
   if (newSendDataUser) s.sendDataUsername = newSendDataUser;
   if (newSendDataPass) s.sendDataPassword = newSendDataPass;
+  if (newGalleryPass) s.galleryPassword = newGalleryPass;
   LFS.set("lfs_settings", s);
   document.getElementById("securityForm").reset();
   toast("Credentials updated");

@@ -1,0 +1,220 @@
+/* ============================================================
+   Lakshmi Fancy Store - gallery.css
+   Customer-facing jewellery album. Extends the shared tokens in
+   style.css (colors/fonts already respect the admin's theme settings)
+   with glamorous, beauty-salon-worthy presentation: a sparkling hero,
+   shine-sweep photo cards, and a rich lightbox.
+
+   Animation note: every animation here uses only opacity/transform/
+   box-shadow (never background-position) - that's the one that broke
+   silently on iOS Safari elsewhere in this app, so it's avoided
+   everywhere by design.
+   ============================================================ */
+
+body.gallery-body{ padding-bottom:0; background:var(--ivory); }
+
+/* ---------- hero ---------- */
+.gallery-hero{
+  position:relative;
+  overflow:hidden;
+  padding:52px 20px 40px;
+  text-align:center;
+  background:linear-gradient(160deg, var(--maroon) 0%, var(--maroon-dark) 65%, var(--maroon) 100%);
+  color:var(--ivory);
+}
+.gallery-hero::before, .gallery-hero::after{
+  content:"";
+  position:absolute;
+  border-radius:50%;
+  background:radial-gradient(circle, rgba(201,162,75,.35) 0%, transparent 70%);
+  animation:heroGlow 4s ease-in-out infinite;
+}
+.gallery-hero::before{ width:340px;height:340px; top:-140px; left:-80px; }
+.gallery-hero::after{ width:280px;height:280px; bottom:-120px; right:-60px; animation-delay:1.4s; }
+@keyframes heroGlow{ 0%,100%{ opacity:.55; transform:scale(1); } 50%{ opacity:.9; transform:scale(1.12); } }
+
+.hero-sparkles{ position:absolute; inset:0; pointer-events:none; }
+.sparkle{
+  position:absolute;
+  width:5px;height:5px;
+  background:var(--gold-light);
+  border-radius:50%;
+  box-shadow:0 0 8px 2px var(--gold-light);
+  animation:sparkleTwinkle 2.6s ease-in-out infinite;
+}
+@keyframes sparkleTwinkle{
+  0%,100%{ opacity:.15; transform:scale(.7); }
+  50%{ opacity:1; transform:scale(1.3); }
+}
+
+.hero-content{ position:relative; z-index:2; max-width:640px; margin:0 auto; }
+.hero-logo{ width:78px;height:78px;border-radius:50%;object-fit:cover;border:3px solid var(--gold); margin:0 auto 14px; display:block; box-shadow:0 0 0 6px rgba(201,162,75,.2); }
+.hero-logo-fallback{
+  width:78px;height:78px;border-radius:50%;
+  background:linear-gradient(135deg,var(--gold) 0%,var(--gold-light) 100%);
+  color:var(--maroon-dark);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-display); font-weight:800; font-size:2rem;
+  margin:0 auto 14px; box-shadow:0 0 0 6px rgba(201,162,75,.2);
+}
+.gallery-hero h1{ color:var(--ivory); font-size:2rem; margin:0 0 6px; letter-spacing:.02em; }
+.hero-tagline{ color:var(--gold-light); font-size:.95rem; letter-spacing:.06em; text-transform:uppercase; margin:0 0 20px; }
+.hero-stats{ display:flex; justify-content:center; gap:14px; flex-wrap:wrap; }
+.hero-stat{
+  background:rgba(255,255,255,.1);
+  border:1px solid rgba(255,255,255,.25);
+  border-radius:20px;
+  padding:8px 18px;
+  font-size:.85rem;
+  backdrop-filter:blur(2px);
+}
+.hero-stat strong{ color:var(--gold-light); font-family:var(--font-display); font-size:1.05rem; }
+
+/* ---------- password gate ---------- */
+.gallery-gate{
+  min-height:100vh;
+  display:flex; align-items:center; justify-content:center;
+  background:radial-gradient(circle at 30% 20%, var(--gold-light) 0%, var(--ivory) 60%);
+  padding:20px;
+}
+.gallery-gate-card{
+  background:#fff; border-radius:20px; padding:40px 32px;
+  max-width:380px; width:100%; text-align:center;
+  box-shadow:var(--shadow-lg);
+  border-top:4px solid var(--gold);
+  position:relative; overflow:hidden;
+}
+.gallery-gate-card .gate-emoji{ font-size:2.6rem; margin-bottom:4px; }
+.gallery-gate-card h2{ margin:0 0 6px; }
+.gallery-gate-card p{ color:var(--ink-soft); font-size:.88rem; margin-bottom:22px; }
+
+/* ---------- filter bar ---------- */
+.gallery-filterbar{
+  position:sticky; top:0; z-index:30;
+  background:var(--ivory);
+  border-bottom:1px solid var(--border);
+  padding:14px 18px;
+  display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:center;
+  box-shadow:var(--shadow);
+}
+.filter-chips{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
+.chip{
+  border:1px solid var(--border);
+  background:#fff;
+  color:var(--ink);
+  padding:8px 16px;
+  border-radius:20px;
+  font-size:.85rem;
+  font-weight:600;
+  cursor:pointer;
+  transition:transform .15s, box-shadow .15s;
+}
+.chip:hover{ transform:translateY(-1px); box-shadow:var(--shadow); }
+.chip.active{ background:linear-gradient(120deg,var(--maroon) 0%,var(--maroon-dark) 100%); color:var(--ivory); border-color:var(--maroon); }
+.gallery-filterbar select, .gallery-filterbar input[type=text]{
+  border:1px solid var(--border); border-radius:20px; padding:8px 16px; font-size:.85rem; background:#fff;
+}
+
+/* ---------- gallery grid ---------- */
+.gallery-wrap{ max-width:1200px; margin:0 auto; padding:26px 18px 60px; }
+.gallery-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(230px, 1fr));
+  gap:22px;
+}
+.gallery-empty{ text-align:center; color:var(--ink-soft); padding:60px 20px; grid-column:1/-1; }
+
+/* ---------- reveal-on-scroll ---------- */
+.reveal{ opacity:0; transform:translateY(26px); transition:opacity .6s ease, transform .6s ease; }
+.reveal.visible{ opacity:1; transform:translateY(0); }
+
+/* ---------- jewel card ---------- */
+.jewel-card{
+  background:#fff;
+  border-radius:16px;
+  overflow:hidden;
+  box-shadow:var(--shadow);
+  cursor:pointer;
+  transition:transform .3s ease, box-shadow .3s ease;
+  display:flex; flex-direction:column;
+}
+.jewel-card:hover{ transform:translateY(-6px); box-shadow:var(--shadow-lg); }
+
+.jewel-img-wrap{ position:relative; aspect-ratio:1/1; overflow:hidden; background:var(--ivory-dim); }
+.jewel-img-wrap img{ width:100%; height:100%; object-fit:cover; transition:transform .5s ease; display:block; }
+.jewel-card:hover .jewel-img-wrap img{ transform:scale(1.09); }
+.jewel-img-placeholder{
+  width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-display); color:var(--gold); font-size:2.6rem;
+}
+.jewel-shine{
+  position:absolute; top:0; left:-60%; width:35%; height:100%;
+  background:linear-gradient(120deg, transparent, rgba(255,255,255,.65), transparent);
+  transform:skewX(-20deg);
+  transition:left .65s ease;
+  pointer-events:none;
+}
+.jewel-card:hover .jewel-shine{ left:130%; }
+
+.jewel-status-badge{
+  position:absolute; top:10px; right:10px;
+  padding:5px 12px; border-radius:14px;
+  font-size:.68rem; font-weight:800; letter-spacing:.02em;
+  color:#fff; text-transform:uppercase;
+  box-shadow:0 2px 6px rgba(0,0,0,.25);
+}
+.jewel-status-badge.status-available{ background:linear-gradient(120deg, var(--teal) 0%, #4d7a6c 100%); }
+.jewel-status-badge.status-rented{
+  background:linear-gradient(120deg, var(--terracotta) 0%, #9a3a2f 100%);
+  animation:badgePulse 1.8s ease-in-out infinite;
+}
+@keyframes badgePulse{
+  0%,100%{ box-shadow:0 0 0 0 rgba(180,72,58,.5), 0 2px 6px rgba(0,0,0,.25); }
+  50%{ box-shadow:0 0 0 6px rgba(180,72,58,0), 0 2px 6px rgba(0,0,0,.25); }
+}
+
+.jewel-info{ padding:14px 16px 16px; flex:1; display:flex; flex-direction:column; gap:4px; }
+.jewel-info h3{ margin:0; font-size:1rem; color:var(--ink); font-family:var(--font-display); }
+.jewel-type{ font-size:.76rem; color:var(--ink-soft); }
+.jewel-rate{ margin-top:4px; font-weight:800; color:var(--maroon); font-family:var(--font-display); font-size:1.05rem; }
+.jewel-return{ font-size:.74rem; color:var(--terracotta); font-weight:600; }
+
+/* ---------- lightbox ---------- */
+.lightbox-backdrop{
+  position:fixed; inset:0; background:rgba(42,33,24,.72);
+  display:flex; align-items:center; justify-content:center;
+  z-index:200; padding:16px; backdrop-filter:blur(2px);
+}
+.lightbox{
+  background:#fff; border-radius:20px; max-width:480px; width:100%;
+  max-height:92vh; overflow:auto; box-shadow:var(--shadow-lg);
+  position:relative;
+}
+.lightbox-close{
+  position:absolute; top:12px; right:12px; z-index:5;
+  width:34px;height:34px;border-radius:50%;
+  background:rgba(0,0,0,.45); color:#fff; border:none; font-size:1.2rem; cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+}
+.lightbox-img-wrap{ aspect-ratio:1/1; background:var(--ivory-dim); overflow:hidden; }
+.lightbox-img-wrap img{ width:100%; height:100%; object-fit:cover; }
+.lightbox-body{ padding:20px; }
+.lightbox-body h2{ margin:0 0 4px; }
+.lightbox-meta{ color:var(--ink-soft); font-size:.85rem; margin-bottom:12px; }
+.lightbox-price-row{ display:flex; justify-content:space-between; align-items:center; margin:14px 0; }
+.lightbox-price{ font-family:var(--font-display); font-size:1.4rem; color:var(--maroon); font-weight:800; }
+.lightbox-cta{
+  margin-top:16px; padding-top:16px; border-top:1px dashed var(--border);
+  text-align:center;
+}
+.lightbox-cta p{ font-size:.85rem; color:var(--ink-soft); margin-bottom:10px; }
+.lightbox-cta-buttons{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+.lightbox-qr{ width:110px; height:110px; object-fit:cover; border-radius:10px; margin:12px auto 0; display:block; border:1px solid var(--border); }
+
+/* ---------- responsive ---------- */
+@media (max-width:520px){
+  .gallery-hero{ padding:40px 16px 30px; }
+  .gallery-hero h1{ font-size:1.6rem; }
+  .gallery-grid{ grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:14px; }
+  .jewel-info h3{ font-size:.9rem; }
+}
