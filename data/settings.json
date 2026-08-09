@@ -23,5 +23,16 @@
   "salesPersonPassword": "sales1111",
   "adminPassword": "admin111",
   "autoBackupHours": 3,
+  "theme": {
+    "bg": "#FBF7F1",
+    "header": "#7A1E3D",
+    "footer": "#5A1530",
+    "accent": "#C9A24B"
+  },
+  "salesDept": {
+    "recentSummaryDays": 5,
+    "showDailySalesSummary": true,
+    "showRentalSummary": true
+  },
   "lastSetupNote": "Change default passwords immediately from the Admin > Security panel."
 }

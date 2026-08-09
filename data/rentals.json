@@ -15,12 +15,21 @@
     "deposit": 1000,
     "discount": 20,
     "advancePaid": 400,
-    "total": 780,
-    "balance": 380,
+    "total": 1400,
+    "balance": 980,
     "status": "active",
     "handledBy": "Kalaivani M",
     "advancePaymentMode": "GPay",
     "settlementPaymentMode": "",
+    "referred": false,
+    "referrerName": "",
+    "referrerPhone": "",
+    "referrerPlace": "",
+    "commissionType": "none",
+    "commissionValue": 0,
+    "referralCommission": 0,
+    "rentalCharge": 400,
+    "netRevenue": 380,
     "createdAt": "2026-08-07T15:05:00.000+05:30"
   }
 ]

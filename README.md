@@ -1,6 +1,33 @@
 # Lakshmi Fancy Store - Store Management SPA
 
-## Latest updates (2026-08-15)
+## Latest updates (2026-08-16)
+
+- **Fixed ₹ showing as garbled text in PDFs**: jsPDF's built-in fonts have
+  no glyph for the Rupee sign, so it silently substituted an unrelated
+  character. PDF output now uses "Rs." instead - screen, browser print, and
+  CSV are unaffected and still show ₹ normally.
+- **Rental revenue no longer includes the refundable security deposit.**
+  Added `LFS.rentalNetRevenue()` (rental charge minus discount minus any
+  referral commission) and applied it everywhere "revenue" is reported:
+  Sales Report Overview, all Analytics charts, the Rentals table/print/PDF
+  (now shows Rental Charge, Deposit (Refundable), and Net Revenue as
+  separate columns), per-item earnings, and loyalty points earned. Receipts
+  now label the deposit line "Security Deposit (Refundable)". The
+  payment-mode chart is intentionally untouched since it tracks actual cash
+  movement (deposit included), not revenue.
+- **Recent Sales Summary** - new sales-app tab: a day-by-day cash-handover
+  digest (Cash / GPay / Other totals, sales & rental revenue) for the last
+  N days, to help staff reconcile and hand over takings. Configurable by
+  Admin under Sales Report &gt; **Sales Dept Setting** (new 6th sub-tab):
+  number of days to show, and whether Daily Sales / Rental sections are
+  visible to the sales team.
+- **Website theme customization**: Admin > Store Setup now has 4 color
+  pickers (Background, Header/Primary, Footer, Accent/Animation) that apply
+  instantly across both apps via CSS custom properties - yes, this was
+  fully feasible client-side since the whole stylesheet was already built
+  on CSS variables.
+
+## Previous updates (2026-08-15)
 
 - **Sales Report split into 5 sub-tabs**: Overview (numbers only - year/
   month/today revenue, cash & GPay totals, repeat customers, commission

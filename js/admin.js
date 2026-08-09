@@ -27,6 +27,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 function paintAdminHeader() {
   const s = LFS.get("lfs_settings");
+  LFS.applyTheme();
   document.title = (s.storeName || "Lakshmi Fancy Store") + " - Admin";
   const nameSlot = document.getElementById("adminStoreName");
   if (nameSlot) nameSlot.textContent = (s.storeName || "Lakshmi Fancy Store") + " · Admin Console";
@@ -102,7 +103,7 @@ function wireAdminEvents() {
       renderAdminModule();
     });
   });
-  const forms = ["stockForm", "rentalInvForm", "staffForm", "attendanceForm", "expenseForm", "customerForm", "loyaltyForm", "personalizationForm", "securityForm", "promoForm", "imageUploadForm"];
+  const forms = ["stockForm", "rentalInvForm", "staffForm", "attendanceForm", "expenseForm", "customerForm", "loyaltyForm", "personalizationForm", "securityForm", "promoForm", "imageUploadForm", "salesDeptForm"];
   forms.forEach(id => {
     const f = document.getElementById(id);
     if (f) f.addEventListener("submit", FORM_HANDLERS[id]);
@@ -1061,12 +1062,14 @@ function renderSalesReportModule() {
       <button class="subtab-btn ${SALES_REPORT_SUBTAB === "referral" ? "active" : ""}" data-subtab-group="salesReport" data-sub="referral">🤝 Referral Program</button>
       <button class="subtab-btn ${SALES_REPORT_SUBTAB === "dailySales" ? "active" : ""}" data-subtab-group="salesReport" data-sub="dailySales">🛍️ Daily Sales</button>
       <button class="subtab-btn ${SALES_REPORT_SUBTAB === "rentals" ? "active" : ""}" data-subtab-group="salesReport" data-sub="rentals">💍 Rentals</button>
+      <button class="subtab-btn ${SALES_REPORT_SUBTAB === "settings" ? "active" : ""}" data-subtab-group="salesReport" data-sub="settings">⚙️ Sales Dept Setting</button>
     </div>
     ${SALES_REPORT_SUBTAB === "overview" ? renderSROverview()
       : SALES_REPORT_SUBTAB === "analytics" ? renderSRAnalytics()
       : SALES_REPORT_SUBTAB === "referral" ? renderSRReferral()
       : SALES_REPORT_SUBTAB === "dailySales" ? renderSRDailySales()
-      : renderSRRentals()}
+      : SALES_REPORT_SUBTAB === "rentals" ? renderSRRentals()
+      : renderSRSettings()}
   `;
 }
 
@@ -1079,7 +1082,8 @@ function renderSROverview() {
   const thisMonth = currentMonthStr(0);
   const thisYear = String(new Date().getFullYear());
 
-  const sumTotal = arr => arr.reduce((s, x) => s + Number(x.total || 0), 0);
+  const sumSalesTotal = arr => arr.reduce((s, x) => s + Number(x.total || 0), 0);
+  const sumRentalRevenue = arr => arr.reduce((s, x) => s + LFS.rentalNetRevenue(x), 0);
   const salesToday = sales.filter(s => s.date === today);
   const rentalsToday = rentals.filter(r => r.rentalDate === today);
   const salesMonth = sales.filter(s => s.date.slice(0, 7) === thisMonth);
@@ -1101,7 +1105,7 @@ function renderSROverview() {
   const repeatCustomerCount = customers.filter(c => c.repeatCustomer).length;
   const referred = rentals.filter(r => r.referred);
   const commissionPaid = referred.reduce((s, r) => s + Number(r.referralCommission || 0), 0);
-  const referralRevenue = referred.reduce((s, r) => s + Number(r.total || 0), 0);
+  const referralRevenue = referred.reduce((s, r) => s + LFS.rentalNetRevenue(r), 0);
 
   return `
     <div class="card">
@@ -1111,26 +1115,26 @@ function renderSROverview() {
           <button class="btn btn-outline btn-sm" onclick="downloadOverviewPDF()">PDF</button>
         </div>
       </div>
-      <p class="text-soft">Key numbers only - for a quick management glance. Graphs live in the Sales Analytics tab.</p>
+      <p class="text-soft">Key numbers only - for a quick management glance. Graphs live in the Sales Analytics tab. "Rental Revenue" here is the actual sale (rental charge minus discount and any referral commission) - it never includes the refundable security deposit.</p>
 
       <h4 class="mt-16" style="color:var(--maroon);">This Year (${thisYear})</h4>
       <div class="grid cols-3">
-        <div class="stat-box"><div class="num">${LFS.formatMoney(sumTotal(salesYear))}</div><div class="lbl">Sales Revenue</div></div>
-        <div class="stat-box"><div class="num">${LFS.formatMoney(sumTotal(rentalsYear))}</div><div class="lbl">Rental Revenue</div></div>
-        <div class="stat-box"><div class="num">${LFS.formatMoney(sumTotal(salesYear) + sumTotal(rentalsYear))}</div><div class="lbl">Total Revenue</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(sumSalesTotal(salesYear))}</div><div class="lbl">Sales Revenue</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(sumRentalRevenue(rentalsYear))}</div><div class="lbl">Rental Revenue</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(sumSalesTotal(salesYear) + sumRentalRevenue(rentalsYear))}</div><div class="lbl">Total Revenue</div></div>
       </div>
 
       <h4 class="mt-16" style="color:var(--maroon);">This Month (${thisMonth})</h4>
       <div class="grid cols-3">
-        <div class="stat-box"><div class="num">${LFS.formatMoney(sumTotal(salesMonth))}</div><div class="lbl">Sales Revenue</div></div>
-        <div class="stat-box"><div class="num">${LFS.formatMoney(sumTotal(rentalsMonth))}</div><div class="lbl">Rental Revenue</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(sumSalesTotal(salesMonth))}</div><div class="lbl">Sales Revenue</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(sumRentalRevenue(rentalsMonth))}</div><div class="lbl">Rental Revenue</div></div>
         <div class="stat-box"><div class="num">${salesMonth.length + rentalsMonth.length}</div><div class="lbl">Transactions</div></div>
       </div>
 
       <h4 class="mt-16" style="color:var(--maroon);">Today (${today})</h4>
       <div class="grid cols-3">
-        <div class="stat-box"><div class="num">${LFS.formatMoney(sumTotal(salesToday))}</div><div class="lbl">Sales Revenue</div></div>
-        <div class="stat-box"><div class="num">${LFS.formatMoney(sumTotal(rentalsToday))}</div><div class="lbl">Rental Revenue</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(sumSalesTotal(salesToday))}</div><div class="lbl">Sales Revenue</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(sumRentalRevenue(rentalsToday))}</div><div class="lbl">Rental Revenue</div></div>
         <div class="stat-box"><div class="num">${salesToday.length + rentalsToday.length}</div><div class="lbl">Transactions</div></div>
       </div>
 
@@ -1151,8 +1155,11 @@ function renderSROverview() {
       <h4 class="mt-16" style="color:var(--maroon);">Outstanding</h4>
       <div class="grid cols-3">
         <div class="stat-box"><div class="num">${LFS.formatMoney(pendingBalance)}</div><div class="lbl">Pending Balances (Active Rentals)</div></div>
-        <div class="stat-box"><div class="num">${sales.length + rentals.length}</div><div class="lbl">Total Transactions (All-Time)</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(rentals.filter(r => r.status === "active").reduce((s, x) => s + Number(x.deposit || 0), 0))}</div><div class="lbl">Deposits Held (Refundable, not revenue)</div></div>
         <div class="stat-box"><div class="num">${rentals.filter(r => r.status === "active").length}</div><div class="lbl">Active Rentals</div></div>
+      </div>
+      <div class="grid cols-3 mt-16">
+        <div class="stat-box"><div class="num">${sales.length + rentals.length}</div><div class="lbl">Total Transactions (All-Time)</div></div>
       </div>
     </div>
   `;
@@ -1164,7 +1171,8 @@ function overviewRows() {
   const today = LFS.todayISO();
   const thisMonth = currentMonthStr(0);
   const thisYear = String(new Date().getFullYear());
-  const sumTotal = arr => arr.reduce((s, x) => s + Number(x.total || 0), 0);
+  const sumSalesTotal = arr => arr.reduce((s, x) => s + Number(x.total || 0), 0);
+  const sumRentalRevenue = arr => arr.reduce((s, x) => s + LFS.rentalNetRevenue(x), 0);
   const paymentTotal = (mode) => {
     let t = sales.filter(s => s.paymentMode === mode).reduce((s, x) => s + Number(x.total || 0), 0);
     t += rentals.filter(r => r.advancePaymentMode === mode).reduce((s, x) => s + Number(x.advancePaid || 0), 0);
@@ -1173,17 +1181,18 @@ function overviewRows() {
   };
   const referred = rentals.filter(r => r.referred);
   return [
-    { metric: "Sales Revenue (Year)", value: LFS.formatMoney(sumTotal(sales.filter(s => s.date.slice(0, 4) === thisYear))) },
-    { metric: "Rental Revenue (Year)", value: LFS.formatMoney(sumTotal(rentals.filter(r => r.rentalDate.slice(0, 4) === thisYear))) },
-    { metric: "Sales Revenue (Month)", value: LFS.formatMoney(sumTotal(sales.filter(s => s.date.slice(0, 7) === thisMonth))) },
-    { metric: "Rental Revenue (Month)", value: LFS.formatMoney(sumTotal(rentals.filter(r => r.rentalDate.slice(0, 7) === thisMonth))) },
-    { metric: "Sales Revenue (Today)", value: LFS.formatMoney(sumTotal(sales.filter(s => s.date === today))) },
-    { metric: "Rental Revenue (Today)", value: LFS.formatMoney(sumTotal(rentals.filter(r => r.rentalDate === today))) },
+    { metric: "Sales Revenue (Year)", value: LFS.formatMoney(sumSalesTotal(sales.filter(s => s.date.slice(0, 4) === thisYear))) },
+    { metric: "Rental Revenue (Year)", value: LFS.formatMoney(sumRentalRevenue(rentals.filter(r => r.rentalDate.slice(0, 4) === thisYear))) },
+    { metric: "Sales Revenue (Month)", value: LFS.formatMoney(sumSalesTotal(sales.filter(s => s.date.slice(0, 7) === thisMonth))) },
+    { metric: "Rental Revenue (Month)", value: LFS.formatMoney(sumRentalRevenue(rentals.filter(r => r.rentalDate.slice(0, 7) === thisMonth))) },
+    { metric: "Sales Revenue (Today)", value: LFS.formatMoney(sumSalesTotal(sales.filter(s => s.date === today))) },
+    { metric: "Rental Revenue (Today)", value: LFS.formatMoney(sumRentalRevenue(rentals.filter(r => r.rentalDate === today))) },
     { metric: "Cash Received (All-Time)", value: LFS.formatMoney(paymentTotal("Cash")) },
     { metric: "GPay Received (All-Time)", value: LFS.formatMoney(paymentTotal("GPay")) },
     { metric: "Repeat Customers", value: customers.filter(c => c.repeatCustomer).length },
     { metric: "Commission Paid So Far", value: LFS.formatMoney(referred.reduce((s, r) => s + Number(r.referralCommission || 0), 0)) },
-    { metric: "Revenue via Referrals", value: LFS.formatMoney(referred.reduce((s, r) => s + Number(r.total || 0), 0)) },
+    { metric: "Revenue via Referrals", value: LFS.formatMoney(referred.reduce((s, r) => s + LFS.rentalNetRevenue(r), 0)) },
+    { metric: "Deposits Held (Refundable, not revenue)", value: LFS.formatMoney(rentals.filter(r => r.status === "active").reduce((s, x) => s + Number(x.deposit || 0), 0)) },
     { metric: "Pending Balances", value: LFS.formatMoney(rentals.filter(r => r.status === "active").reduce((s, x) => s + Number(x.balance || 0), 0)) },
     { metric: "Total Transactions (All-Time)", value: sales.length + rentals.length }
   ];
@@ -1304,12 +1313,46 @@ function renderSRRentals() {
       </div>
       <div class="table-wrap mt-16">
         <table>
-          <thead><tr><th>Date</th><th>Time (IST)</th><th>Item</th><th>Customer</th><th>Employee</th><th>Status</th><th>Referred By</th><th>Total</th><th>Balance</th></tr></thead>
-          <tbody>${rentals.slice().reverse().slice(0, 50).map(r => `<tr><td>${r.rentalDate}</td><td>${LFS.formatIST(r.createdAt)}</td><td>${escapeHtml(r.itemName)}</td><td>${escapeHtml(r.customerName)}</td><td>${escapeHtml(r.handledBy || "-")}</td><td>${r.status}</td><td>${r.referred ? `${escapeHtml(r.referrerName)} (${LFS.formatMoney(r.referralCommission)})` : "-"}</td><td>${LFS.formatMoney(r.total)}</td><td>${LFS.formatMoney(r.balance)}</td></tr>`).join("") || `<tr><td colspan="9" class="text-soft">No rentals yet.</td></tr>`}</tbody>
+          <thead><tr><th>Date</th><th>Time (IST)</th><th>Item</th><th>Customer</th><th>Employee</th><th>Status</th><th>Referred By</th><th>Rental Charge</th><th>Deposit (Refundable)</th><th>Net Revenue</th><th>Balance</th></tr></thead>
+          <tbody>${rentals.slice().reverse().slice(0, 50).map(r => `<tr><td>${r.rentalDate}</td><td>${LFS.formatIST(r.createdAt)}</td><td>${escapeHtml(r.itemName)}</td><td>${escapeHtml(r.customerName)}</td><td>${escapeHtml(r.handledBy || "-")}</td><td>${r.status}</td><td>${r.referred ? `${escapeHtml(r.referrerName)} (${LFS.formatMoney(r.referralCommission)})` : "-"}</td><td>${LFS.formatMoney(r.rentalCharge !== undefined ? r.rentalCharge : r.dailyRate * r.days)}</td><td>${LFS.formatMoney(r.deposit)}</td><td>${LFS.formatMoney(LFS.rentalNetRevenue(r))}</td><td>${LFS.formatMoney(r.balance)}</td></tr>`).join("") || `<tr><td colspan="11" class="text-soft">No rentals yet.</td></tr>`}</tbody>
         </table>
       </div>
     </div>
   `;
+}
+
+/* ---------- 6. Sales Dept Setting ---------- */
+function renderSRSettings() {
+  const s = LFS.get("lfs_settings");
+  const sd = s.salesDept || { recentSummaryDays: 5, showDailySalesSummary: true, showRentalSummary: true };
+  return `
+    <div class="card">
+      <h3>⚙️ Sales Dept Setting</h3>
+      <p class="text-soft">Controls what the sales team sees under their own "Recent Sales Summary" tab - a quick digest that helps them reconcile cash and hand over takings to the shop owner at the end of a shift.</p>
+      <form id="salesDeptForm">
+        <div class="field" style="max-width:220px;">
+          <label>Number of days to show</label>
+          <input type="number" id="sdDays" min="1" max="30" value="${sd.recentSummaryDays || 5}">
+        </div>
+        <p class="text-soft mt-8">Which sections should sales staff be able to see?</p>
+        <div class="field"><label><input type="checkbox" id="sdShowDaily" ${sd.showDailySalesSummary !== false ? "checked" : ""} style="width:auto;display:inline-block;margin-right:6px;">Daily Sales Summary</label></div>
+        <div class="field"><label><input type="checkbox" id="sdShowRental" ${sd.showRentalSummary !== false ? "checked" : ""} style="width:auto;display:inline-block;margin-right:6px;">Rental Summary</label></div>
+        <button class="btn btn-primary" type="submit">Save Settings</button>
+      </form>
+    </div>
+  `;
+}
+function saveSalesDeptSettings(e) {
+  e.preventDefault();
+  const s = LFS.get("lfs_settings");
+  s.salesDept = {
+    recentSummaryDays: Math.max(1, Number(document.getElementById("sdDays").value) || 5),
+    showDailySalesSummary: document.getElementById("sdShowDaily").checked,
+    showRentalSummary: document.getElementById("sdShowRental").checked
+  };
+  LFS.set("lfs_settings", s);
+  toast("Sales Dept settings saved");
+  renderAdminModule();
 }
 
 /* ============================================================
@@ -1334,7 +1377,7 @@ function initAnalyticsCharts() {
 
   const monthly = Array(12).fill(0);
   sales.forEach(s => { const d = new Date(s.date); if (d.getFullYear() === SALES_CHART_YEAR) monthly[d.getMonth()] += Number(s.total || 0); });
-  rentals.forEach(r => { const d = new Date(r.rentalDate); if (d.getFullYear() === SALES_CHART_YEAR) monthly[d.getMonth()] += Number(r.total || 0); });
+  rentals.forEach(r => { const d = new Date(r.rentalDate); if (d.getFullYear() === SALES_CHART_YEAR) monthly[d.getMonth()] += LFS.rentalNetRevenue(r); });
   renderOrUpdateChart("chartMonthly", {
     type: "bar",
     data: { labels: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], datasets: [{ label: "Revenue (₹)", data: monthly, backgroundColor: "#7A1E3D" }] },
@@ -1348,7 +1391,7 @@ function initAnalyticsCharts() {
     const iso = d.toISOString().slice(0, 10);
     dayLabels.push(iso.slice(5));
     let t = sales.filter(s => s.date === iso).reduce((s, x) => s + Number(x.total || 0), 0);
-    t += rentals.filter(r => r.rentalDate === iso).reduce((s, x) => s + Number(x.total || 0), 0);
+    t += rentals.filter(r => r.rentalDate === iso).reduce((s, x) => s + LFS.rentalNetRevenue(x), 0);
     dayTotals.push(t);
   }
   renderOrUpdateChart("chartDailyTrend", {
@@ -1359,10 +1402,12 @@ function initAnalyticsCharts() {
 
   const catTotals = {};
   sales.forEach(s => { const inv = inventory.find(i => i.id === s.itemId); const cat = inv ? inv.category : "Others"; catTotals[cat] = (catTotals[cat] || 0) + Number(s.total || 0); });
-  rentals.forEach(r => { const it = rentalItems.find(i => i.id === r.rentalItemId); const cat = it ? it.category : "Others"; catTotals[cat] = (catTotals[cat] || 0) + Number(r.total || 0); });
+  rentals.forEach(r => { const it = rentalItems.find(i => i.id === r.rentalItemId); const cat = it ? it.category : "Others"; catTotals[cat] = (catTotals[cat] || 0) + LFS.rentalNetRevenue(r); });
   const catLabels = Object.keys(catTotals);
   renderOrUpdateChart("chartCategories", { type: "pie", data: { labels: catLabels, datasets: [{ data: catLabels.map(l => catTotals[l]), backgroundColor: CHART_PALETTE }] } });
 
+  // Payment-mode split intentionally tracks actual money movement (incl.
+  // refundable deposits collected/returned in cash or UPI) - not "revenue".
   const payTotals = {};
   sales.forEach(s => { const m = s.paymentMode || "Other"; payTotals[m] = (payTotals[m] || 0) + Number(s.total || 0); });
   rentals.forEach(r => {
@@ -1375,7 +1420,7 @@ function initAnalyticsCharts() {
 
   const empTotals = {};
   sales.forEach(s => { const emp = s.soldBy || "Unassigned"; empTotals[emp] = (empTotals[emp] || 0) + Number(s.total || 0); });
-  rentals.forEach(r => { const emp = r.handledBy || "Unassigned"; empTotals[emp] = (empTotals[emp] || 0) + Number(r.total || 0); });
+  rentals.forEach(r => { const emp = r.handledBy || "Unassigned"; empTotals[emp] = (empTotals[emp] || 0) + LFS.rentalNetRevenue(r); });
   const empLabels = Object.keys(empTotals);
   renderOrUpdateChart("chartEmployees", {
     type: "bar", data: { labels: empLabels, datasets: [{ label: "Revenue (₹)", data: empLabels.map(l => empTotals[l]), backgroundColor: "#C9A24B" }] },
@@ -1430,7 +1475,7 @@ function initRentalsCharts() {
     data: { labels: statusLabels, datasets: [{ data: statusLabels.map(l => statusTotals[l]), backgroundColor: CHART_PALETTE }] }
   });
   const eventTotals = {};
-  rentals.forEach(r => { const e = r.eventType || "Others"; eventTotals[e] = (eventTotals[e] || 0) + Number(r.total || 0); });
+  rentals.forEach(r => { const e = r.eventType || "Others"; eventTotals[e] = (eventTotals[e] || 0) + LFS.rentalNetRevenue(r); });
   const eventLabels = Object.keys(eventTotals);
   renderOrUpdateChart("chartEventType", {
     type: "bar",
@@ -1465,17 +1510,19 @@ function downloadDailySalesPDF() {
 function rentalsRows() {
   return LFS.get("lfs_rentals").slice().reverse().map(r => ({
     date: r.rentalDate, time: LFS.formatIST(r.createdAt), item: r.itemName, customer: r.customerName, employee: r.handledBy || "-",
-    status: r.status, referredBy: r.referred ? r.referrerName : "-", total: LFS.formatMoney(r.total), balance: LFS.formatMoney(r.balance)
+    status: r.status, referredBy: r.referred ? r.referrerName : "-",
+    rentalCharge: LFS.formatMoney(r.rentalCharge !== undefined ? r.rentalCharge : r.dailyRate * r.days),
+    deposit: LFS.formatMoney(r.deposit), netRevenue: LFS.formatMoney(LFS.rentalNetRevenue(r)), balance: LFS.formatMoney(r.balance)
   }));
 }
 function printRentalsReport() {
   LFS.printReport("Rentals Report", LFS.tableHtml(rentalsRows(), [
-    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "status", label: "Status" }, { key: "referredBy", label: "Referred By" }, { key: "total", label: "Total" }, { key: "balance", label: "Balance" }
+    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "status", label: "Status" }, { key: "referredBy", label: "Referred By" }, { key: "rentalCharge", label: "Rental Charge" }, { key: "deposit", label: "Deposit (Refundable)" }, { key: "netRevenue", label: "Net Revenue" }, { key: "balance", label: "Balance" }
   ]));
 }
 function downloadRentalsPDF() {
   LFS.downloadPDF("Rentals Report", rentalsRows(), [
-    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "status", label: "Status" }, { key: "referredBy", label: "Referred By" }, { key: "total", label: "Total" }, { key: "balance", label: "Balance" }
+    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "status", label: "Status" }, { key: "referredBy", label: "Referred By" }, { key: "rentalCharge", label: "Rental Charge" }, { key: "deposit", label: "Deposit (Refundable)" }, { key: "netRevenue", label: "Net Revenue" }, { key: "balance", label: "Balance" }
   ]);
 }
 
@@ -1860,10 +1907,27 @@ function renderPersonalizationModule() {
           <div class="field"><label>PhonePe QR</label><input type="file" id="pQrPhonepe" accept="image/*"></div>
           <div class="field"><label>Google Review QR</label><input type="file" id="pQrReview" accept="image/*"></div>
         </div>
-        <button class="btn btn-primary" type="submit">Save Store Settings</button>
+
+        <h3 class="mt-16">🎨 Website Theme</h3>
+        <p class="text-soft">Customize the colors used across both the sales app and this admin console. Changes apply immediately after saving.</p>
+        <div class="grid cols-4">
+          <div class="field"><label>Background</label><input type="color" id="pThemeBg" value="${(s.theme && s.theme.bg) || LFS.DEFAULT_THEME.bg}" style="height:42px;padding:4px;"></div>
+          <div class="field"><label>Header / Primary</label><input type="color" id="pThemeHeader" value="${(s.theme && s.theme.header) || LFS.DEFAULT_THEME.header}" style="height:42px;padding:4px;"></div>
+          <div class="field"><label>Footer</label><input type="color" id="pThemeFooter" value="${(s.theme && s.theme.footer) || LFS.DEFAULT_THEME.footer}" style="height:42px;padding:4px;"></div>
+          <div class="field"><label>Accent / Animation</label><input type="color" id="pThemeAccent" value="${(s.theme && s.theme.accent) || LFS.DEFAULT_THEME.accent}" style="height:42px;padding:4px;"></div>
+        </div>
+        <button type="button" class="btn btn-outline btn-sm" onclick="resetTheme()">Reset to Default Colors</button>
+
+        <button class="btn btn-primary mt-16" type="submit">Save Store Settings</button>
       </form>
     </div>
   `;
+}
+function resetTheme() {
+  document.getElementById("pThemeBg").value = LFS.DEFAULT_THEME.bg;
+  document.getElementById("pThemeHeader").value = LFS.DEFAULT_THEME.header;
+  document.getElementById("pThemeFooter").value = LFS.DEFAULT_THEME.footer;
+  document.getElementById("pThemeAccent").value = LFS.DEFAULT_THEME.accent;
 }
 function savePersonalization(e) {
   e.preventDefault();
@@ -1895,6 +1959,12 @@ function savePersonalization(e) {
         gpay: qrGpay || (s.qrCodes || {}).gpay || "",
         phonepe: qrPhonepe || (s.qrCodes || {}).phonepe || "",
         googleReview: qrReview || (s.qrCodes || {}).googleReview || ""
+      },
+      theme: {
+        bg: document.getElementById("pThemeBg").value,
+        header: document.getElementById("pThemeHeader").value,
+        footer: document.getElementById("pThemeFooter").value,
+        accent: document.getElementById("pThemeAccent").value
       }
     };
     LFS.set("lfs_settings", updated);
@@ -2008,5 +2078,6 @@ const FORM_HANDLERS = {
   personalizationForm: savePersonalization,
   securityForm: saveSecurity,
   promoForm: savePromotion,
-  imageUploadForm: saveImageUpload
+  imageUploadForm: saveImageUpload,
+  salesDeptForm: saveSalesDeptSettings
 };

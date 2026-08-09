@@ -24,6 +24,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 /* ---------- header ---------- */
 function paintHeader() {
   const s = LFS.get("lfs_settings");
+  LFS.applyTheme();
   document.title = s.storeName || "Lakshmi Fancy Store";
   const logoSlot = document.getElementById("logoSlot");
   if (logoSlot) {
@@ -91,6 +92,7 @@ function renderTab() {
   else if (CURRENT_TAB === "rental") main.innerHTML = renderRentalTab();
   else if (CURRENT_TAB === "catalog") main.innerHTML = renderCatalog();
   else if (CURRENT_TAB === "expenses") main.innerHTML = renderDailyExpenses();
+  else if (CURRENT_TAB === "summary") main.innerHTML = renderRecentSalesSummary();
   wireTabEvents();
 }
 
@@ -754,8 +756,11 @@ function submitRental(e) {
   if (RENTAL_REDEEM_APPLIED && RENTAL_REDEEM_APPLIED.customerId === cust.id) {
     cust.loyaltyPoints = 0;
   }
+  const rentalCharge = rate * days;
+  const netRevenue = Math.max(0, rentalCharge - discount - (referred ? referralCommission : 0));
   const loyalty = LFS.get("lfs_loyalty");
-  cust.loyaltyPoints = (cust.loyaltyPoints || 0) + Math.floor(total * (loyalty.pointsPer100Rupees || 0) / 100);
+  // Points are earned on the actual sale (rental charge), never on the refundable deposit.
+  cust.loyaltyPoints = (cust.loyaltyPoints || 0) + Math.floor(netRevenue * (loyalty.pointsPer100Rupees || 0) / 100);
   LFS.set("lfs_customers", customers);
   RENTAL_REDEEM_APPLIED = null;
 
@@ -777,7 +782,8 @@ function submitRental(e) {
     referred, referrerName, referrerPhone, referrerPlace,
     commissionType: referred ? (item.commissionType || "none") : "none",
     commissionValue: referred ? (item.commissionValue || 0) : 0,
-    referralCommission
+    referralCommission,
+    rentalCharge, netRevenue
   };
   rentals.push(record);
   LFS.set("lfs_rentals", rentals);
@@ -791,7 +797,7 @@ function submitRental(e) {
     customerName: name, phone,
     rows: [
       { label: "Daily Rate × Days", value: LFS.formatMoney(rate * days) },
-      { label: "Deposit", value: LFS.formatMoney(deposit) },
+      { label: "Security Deposit (Refundable)", value: LFS.formatMoney(deposit) },
       { label: "Discount", value: "-" + LFS.formatMoney(discount) },
       { label: "Advance Paid", value: "-" + LFS.formatMoney(advance) }
     ],
@@ -848,12 +854,12 @@ function renderHistoricRentals() {
       <h2>📜 Rental History</h2>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Item</th><th>Customer</th><th>Rented</th><th>Time (IST)</th><th>Returned</th><th>Total</th><th></th></tr></thead>
+          <thead><tr><th>Item</th><th>Customer</th><th>Rented</th><th>Time (IST)</th><th>Returned</th><th>Rental Charge</th><th>Deposit (Refundable)</th><th>Net Revenue</th><th></th></tr></thead>
           <tbody>
             ${past.map(r => `<tr>
-              <td>${escapeHtml(r.itemName)}</td><td>${escapeHtml(r.customerName)}</td><td>${r.rentalDate}</td><td>${LFS.formatIST(r.createdAt)}</td><td>${r.actualReturnDate}</td><td>${LFS.formatMoney(r.total)}</td>
+              <td>${escapeHtml(r.itemName)}</td><td>${escapeHtml(r.customerName)}</td><td>${r.rentalDate}</td><td>${LFS.formatIST(r.createdAt)}</td><td>${r.actualReturnDate}</td><td>${LFS.formatMoney(r.rentalCharge !== undefined ? r.rentalCharge : r.dailyRate * r.days)}</td><td>${LFS.formatMoney(r.deposit)}</td><td>${LFS.formatMoney(LFS.rentalNetRevenue(r))}</td>
               <td><button class="btn btn-outline btn-sm" onclick="printRentalReceipt('${r.id}')">Print</button></td>
-            </tr>`).join("") || `<tr><td colspan="7" class="text-soft">No history yet.</td></tr>`}
+            </tr>`).join("") || `<tr><td colspan="9" class="text-soft">No history yet.</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -872,7 +878,7 @@ function printRentalReceipt(rentalId) {
     customerName: r.customerName, phone: r.customerPhone,
     rows: [
       { label: "Daily Rate × Days", value: LFS.formatMoney(r.dailyRate * r.days) },
-      { label: "Deposit", value: LFS.formatMoney(r.deposit) },
+      { label: "Security Deposit (Refundable)", value: LFS.formatMoney(r.deposit) },
       { label: "Discount", value: "-" + LFS.formatMoney(r.discount) },
       { label: "Advance Paid", value: "-" + LFS.formatMoney(r.advancePaid) }
     ],
@@ -885,10 +891,14 @@ function printRentalReceipt(rentalId) {
 
 function printRentalsReportSales() {
   const rentals = LFS.get("lfs_rentals").slice().reverse();
-  const rows = rentals.map(r => ({ date: r.rentalDate, time: LFS.formatIST(r.createdAt), item: r.itemName, customer: r.customerName, status: r.status, total: LFS.formatMoney(r.total), balance: LFS.formatMoney(r.balance) }));
+  const rows = rentals.map(r => ({
+    date: r.rentalDate, time: LFS.formatIST(r.createdAt), item: r.itemName, customer: r.customerName, status: r.status,
+    rentalCharge: LFS.formatMoney(r.rentalCharge !== undefined ? r.rentalCharge : r.dailyRate * r.days),
+    deposit: LFS.formatMoney(r.deposit), netRevenue: LFS.formatMoney(LFS.rentalNetRevenue(r)), balance: LFS.formatMoney(r.balance)
+  }));
   LFS.printReport("Rentals Report", LFS.tableHtml(rows, [
     { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" },
-    { key: "status", label: "Status" }, { key: "total", label: "Total" }, { key: "balance", label: "Balance" }
+    { key: "status", label: "Status" }, { key: "rentalCharge", label: "Rental Charge" }, { key: "deposit", label: "Deposit (Refundable)" }, { key: "netRevenue", label: "Net Revenue" }, { key: "balance", label: "Balance" }
   ]));
 }
 
@@ -907,7 +917,7 @@ function markReturned(rentalId) {
   if (item) {
     item.status = "available";
     item.timesRented = (item.timesRented || 0) + 1;
-    item.totalEarned = (item.totalEarned || 0) + (r.total - r.deposit);
+    item.totalEarned = (item.totalEarned || 0) + LFS.rentalNetRevenue(r);
     LFS.set("lfs_rental_items", items);
   }
   toast("Item marked as returned to stock");
@@ -1032,6 +1042,137 @@ function submitDailyExpense(e) {
   LFS.set("lfs_expenses", expenses);
   toast("Expense logged");
   renderTab();
+}
+
+/* ============================================================
+   RECENT SALES SUMMARY - configurable cash-handover digest
+   ============================================================ */
+function daySalesSummary(dateISO) {
+  const sales = LFS.get("lfs_sales").filter(s => s.date === dateISO);
+  const rentalsStarted = LFS.get("lfs_rentals").filter(r => r.rentalDate === dateISO);
+  const rentalsReturned = LFS.get("lfs_rentals").filter(r => r.actualReturnDate === dateISO);
+
+  let cash = 0, gpay = 0, other = 0;
+  const bucket = (mode, amt) => {
+    if (!amt) return;
+    if (mode === "Cash") cash += amt;
+    else if (mode === "GPay") gpay += amt;
+    else other += amt;
+  };
+  sales.forEach(s => bucket(s.paymentMode, Number(s.total || 0)));
+  rentalsStarted.forEach(r => bucket(r.advancePaymentMode, Number(r.advancePaid || 0)));
+  rentalsReturned.forEach(r => bucket(r.settlementPaymentMode, Math.max(0, Number(r.balance || 0))));
+
+  const salesRevenue = sales.reduce((s, x) => s + Number(x.total || 0), 0);
+  const rentalRevenue = rentalsStarted.reduce((s, r) => s + LFS.rentalNetRevenue(r), 0);
+  const pointsEarned = sales.reduce((s, x) => s + Number(x.pointsEarned || 0), 0);
+  const pointsRedeemed = sales.reduce((s, x) => s + Number(x.pointsRedeemed || 0), 0);
+
+  return { date: dateISO, salesCount: sales.length, salesRevenue, rentalCount: rentalsStarted.length, rentalRevenue, pointsEarned, pointsRedeemed, cash, gpay, other, total: cash + gpay + other };
+}
+
+function renderRecentSalesSummary() {
+  const s = LFS.get("lfs_settings");
+  const sd = s.salesDept || { recentSummaryDays: 5, showDailySalesSummary: true, showRentalSummary: true };
+  const days = Math.max(1, Number(sd.recentSummaryDays) || 5);
+  const showDaily = sd.showDailySalesSummary !== false;
+  const showRental = sd.showRentalSummary !== false;
+
+  const dayList = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    dayList.push(daySalesSummary(d.toISOString().slice(0, 10)));
+  }
+
+  const grand = dayList.reduce((acc, d) => ({
+    salesRevenue: acc.salesRevenue + d.salesRevenue, rentalRevenue: acc.rentalRevenue + d.rentalRevenue,
+    cash: acc.cash + d.cash, gpay: acc.gpay + d.gpay, other: acc.other + d.other, total: acc.total + d.total
+  }), { salesRevenue: 0, rentalRevenue: 0, cash: 0, gpay: 0, other: 0, total: 0 });
+
+  return `
+    <div class="card">
+      <div class="flex-between"><h2 style="margin:0;">📆 Recent Sales Summary - Last ${days} Days</h2>
+        <div class="flex gap-8">
+          <button class="btn btn-outline btn-sm" onclick="printRecentSummary()">Print</button>
+          <button class="btn btn-outline btn-sm" onclick="downloadRecentSummaryPDF()">PDF</button>
+          <button class="btn btn-outline btn-sm" onclick="downloadRecentSummaryCSV()">CSV</button>
+        </div>
+      </div>
+      <p class="text-soft">A quick digest to help reconcile cash and hand over the day's takings to the shop owner. The number of days and which sections show here are set by the Admin under Sales Report &gt; Sales Dept Setting.</p>
+      <div class="grid cols-3">
+        ${showDaily ? `<div class="stat-box"><div class="num">${LFS.formatMoney(grand.salesRevenue)}</div><div class="lbl">Daily Sales Revenue</div></div>` : ""}
+        ${showRental ? `<div class="stat-box"><div class="num">${LFS.formatMoney(grand.rentalRevenue)}</div><div class="lbl">Rental Revenue</div></div>` : ""}
+        <div class="stat-box"><div class="num">${LFS.formatMoney(grand.total)}</div><div class="lbl">Total Collected</div></div>
+      </div>
+      <div class="grid cols-3 mt-16">
+        <div class="stat-box"><div class="num">${LFS.formatMoney(grand.cash)}</div><div class="lbl">Cash Collected</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(grand.gpay)}</div><div class="lbl">GPay Collected</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(grand.other)}</div><div class="lbl">Other (Card / UPI)</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Day-by-Day Breakdown</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Date</th>
+            ${showDaily ? "<th>Daily Sales (count)</th><th>Sales Revenue</th>" : ""}
+            ${showRental ? "<th>Rentals (count)</th><th>Rental Revenue</th>" : ""}
+            <th>Cash</th><th>GPay</th><th>Other</th><th>Total Collected</th>
+          </tr></thead>
+          <tbody>
+            ${dayList.map(d => `<tr>
+              <td>${d.date}</td>
+              ${showDaily ? `<td>${d.salesCount}</td><td>${LFS.formatMoney(d.salesRevenue)}</td>` : ""}
+              ${showRental ? `<td>${d.rentalCount}</td><td>${LFS.formatMoney(d.rentalRevenue)}</td>` : ""}
+              <td>${LFS.formatMoney(d.cash)}</td><td>${LFS.formatMoney(d.gpay)}</td><td>${LFS.formatMoney(d.other)}</td><td style="font-weight:700;">${LFS.formatMoney(d.total)}</td>
+            </tr>`).join("")}
+            <tr style="font-weight:700;background:var(--ivory-dim);">
+              <td>Total</td>
+              ${showDaily ? `<td></td><td>${LFS.formatMoney(grand.salesRevenue)}</td>` : ""}
+              ${showRental ? `<td></td><td>${LFS.formatMoney(grand.rentalRevenue)}</td>` : ""}
+              <td>${LFS.formatMoney(grand.cash)}</td><td>${LFS.formatMoney(grand.gpay)}</td><td>${LFS.formatMoney(grand.other)}</td><td>${LFS.formatMoney(grand.total)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+function recentSummaryRows() {
+  const s = LFS.get("lfs_settings");
+  const sd = s.salesDept || { recentSummaryDays: 5 };
+  const days = Math.max(1, Number(sd.recentSummaryDays) || 5);
+  const rows = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const sum = daySalesSummary(d.toISOString().slice(0, 10));
+    rows.push({
+      date: sum.date, salesCount: sum.salesCount, salesRevenue: LFS.formatMoney(sum.salesRevenue),
+      rentalCount: sum.rentalCount, rentalRevenue: LFS.formatMoney(sum.rentalRevenue),
+      cash: LFS.formatMoney(sum.cash), gpay: LFS.formatMoney(sum.gpay), other: LFS.formatMoney(sum.other), total: LFS.formatMoney(sum.total)
+    });
+  }
+  return rows;
+}
+function printRecentSummary() {
+  const days = (LFS.get("lfs_settings").salesDept || {}).recentSummaryDays || 5;
+  LFS.printReport(`Recent Sales Summary - Last ${days} Days`, LFS.tableHtml(recentSummaryRows(), [
+    { key: "date", label: "Date" }, { key: "salesCount", label: "Sales #" }, { key: "salesRevenue", label: "Sales Revenue" },
+    { key: "rentalCount", label: "Rentals #" }, { key: "rentalRevenue", label: "Rental Revenue" },
+    { key: "cash", label: "Cash" }, { key: "gpay", label: "GPay" }, { key: "other", label: "Other" }, { key: "total", label: "Total Collected" }
+  ]));
+}
+function downloadRecentSummaryPDF() {
+  const days = (LFS.get("lfs_settings").salesDept || {}).recentSummaryDays || 5;
+  LFS.downloadPDF(`Recent Sales Summary - Last ${days} Days`, recentSummaryRows(), [
+    { key: "date", label: "Date" }, { key: "salesCount", label: "Sales #" }, { key: "salesRevenue", label: "Sales Revenue" },
+    { key: "rentalCount", label: "Rentals #" }, { key: "rentalRevenue", label: "Rental Revenue" },
+    { key: "cash", label: "Cash" }, { key: "gpay", label: "GPay" }, { key: "other", label: "Other" }, { key: "total", label: "Total Collected" }
+  ]);
+}
+function downloadRecentSummaryCSV() {
+  LFS.downloadCSV("recent_sales_summary.csv", recentSummaryRows());
 }
 
 /* ============================================================

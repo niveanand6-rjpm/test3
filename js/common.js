@@ -239,6 +239,11 @@ const LFS = (() => {
       alert("PDF library isn't available right now (check your internet connection). You can still use Print > Save as PDF.");
       return;
     }
+    // jsPDF's built-in fonts (Helvetica etc.) have no glyph for the Rupee
+    // sign (₹) and silently substitute an unrelated character instead - so
+    // for PDF output specifically we swap ₹ for "Rs." (screen, browser
+    // print, and CSV all render ₹ fine and are untouched).
+    const forPdf = (v) => String(v === undefined || v === null ? "" : v).replace(/₹/g, "Rs. ");
     const s = get("lfs_settings");
     const cols = columns || (rows && rows[0] ? Object.keys(rows[0]).map(k => ({ key: k, label: k })) : []);
     const doc = new window.jspdf.jsPDF();
@@ -246,22 +251,22 @@ const LFS = (() => {
       try { doc.addImage(s.logoDataUrl, "JPEG", 14, 8, 16, 16); } catch (e) { /* unsupported image format, skip */ }
     }
     doc.setFontSize(14);
-    doc.text(s.storeName || "Lakshmi Fancy Store", s.logoDataUrl ? 34 : 14, 14);
+    doc.text(forPdf(s.storeName || "Lakshmi Fancy Store"), s.logoDataUrl ? 34 : 14, 14);
     doc.setFontSize(9);
     doc.setTextColor(110);
-    doc.text([s.address || "", s.phone || ""].filter(Boolean).join(" | "), s.logoDataUrl ? 34 : 14, 20);
+    doc.text(forPdf([s.address || "", s.phone || ""].filter(Boolean).join(" | ")), s.logoDataUrl ? 34 : 14, 20);
     doc.setTextColor(0);
     doc.setFontSize(12);
-    doc.text(title, 14, 34);
+    doc.text(forPdf(title), 14, 34);
     doc.setFontSize(8);
     doc.setTextColor(110);
-    doc.text("Generated on " + new Date().toLocaleString("en-IN"), 14, 40);
+    doc.text(forPdf("Generated on " + new Date().toLocaleString("en-IN")), 14, 40);
     doc.setTextColor(0);
     if (doc.autoTable) {
       doc.autoTable({
         startY: 46,
-        head: [cols.map(c => c.label)],
-        body: (rows || []).map(r => cols.map(c => (r[c.key] !== undefined && r[c.key] !== null) ? String(r[c.key]) : "")),
+        head: [cols.map(c => forPdf(c.label))],
+        body: (rows || []).map(r => cols.map(c => forPdf((r[c.key] !== undefined && r[c.key] !== null) ? r[c.key] : ""))),
         styles: { fontSize: 8 },
         headStyles: { fillColor: [122, 30, 61] }
       });
@@ -450,6 +455,38 @@ const LFS = (() => {
   }
   function scrollToTop() { window.scrollTo({ top: 0, behavior: "smooth" }); }
 
+  /* ---------- rental revenue accounting ----------
+     A rental's `total` (and the balance shown at the POS) intentionally
+     includes the refundable security deposit, because that's the actual
+     amount collected at the counter. But the deposit is NOT revenue - it
+     gets handed back when the item is returned. This computes the real
+     "sale" amount: rental charge, minus discount, minus any referral
+     commission owed - so reports never overstate revenue with money that
+     has to be refunded.
+  */
+  function rentalNetRevenue(r) {
+    if (!r) return 0;
+    if (r.netRevenue !== undefined && r.netRevenue !== null) return Number(r.netRevenue) || 0;
+    const charge = r.rentalCharge !== undefined ? Number(r.rentalCharge) : Number(r.dailyRate || 0) * Number(r.days || 0);
+    const commission = r.referred ? Number(r.referralCommission || 0) : 0;
+    return Math.max(0, charge - Number(r.discount || 0) - commission);
+  }
+
+  /* ---------- site-wide theme ----------
+     Admin-configurable colors, applied as CSS custom-property overrides on
+     the document root. Falls back to the built-in palette if unset.
+  */
+  const DEFAULT_THEME = { bg: "#FBF7F1", header: "#7A1E3D", footer: "#5A1530", accent: "#C9A24B" };
+  function applyTheme() {
+    const s = get("lfs_settings");
+    const t = { ...DEFAULT_THEME, ...(s.theme || {}) };
+    const root = document.documentElement.style;
+    root.setProperty("--ivory", t.bg);
+    root.setProperty("--maroon", t.header);
+    root.setProperty("--maroon-dark", t.footer);
+    root.setProperty("--gold", t.accent);
+  }
+
   /* ---------- social link normalization ----------
      Admin can type a full URL or just a handle (e.g. "@lakshmifancystore")
      - this builds a sensible clickable link either way.
@@ -505,6 +542,7 @@ const LFS = (() => {
     isValidPhone, isValidEmail, isValidAmount,
     checkPassword, isAuthed, setAuthed, logout, resetAppData,
     formatMoney, todayISO, daysBetween, formatIST, nowISO, normalizeSocialUrl, paintFooter, initGoTop, scrollToTop,
+    rentalNetRevenue, applyTheme, DEFAULT_THEME,
     currentEmployeeName, setCurrentEmployeeName,
     activePromotionToday, promotionAppliesTo, anyOtherPromotionEnabled,
     PAYMENT_MODES, REFERRAL_SOURCES
@@ -523,7 +561,7 @@ const LFS_EVENT_TYPES = ["Marriage","Baby Shower","Reception","Engagement","Nami
 /* Build marker - open DevTools Console on any device and check this value
    against the version query string on index.html/admin.html's <script> tags
    to confirm the browser isn't showing a stale cached copy of the app. */
-const LFS_BUILD_VERSION = "2026-08-15";
+const LFS_BUILD_VERSION = "2026-08-16";
 console.info("Lakshmi Fancy Store build:", LFS_BUILD_VERSION);
 
 /* Shared recovery action wired to the "Trouble logging in?" link on both
