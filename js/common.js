@@ -35,7 +35,8 @@ const LFS = (() => {
     lfs_loyalty: "data/loyalty.json",
     lfs_customer_requests: "data/customer_requests.json",
     lfs_promotions: "data/promotions.json",
-    lfs_images: "data/images.json"
+    lfs_images: "data/images.json",
+    lfs_sync_log: "data/sync_log.json"
   };
 
   const ALL_KEYS = Object.keys(SEED_MAP);
@@ -546,7 +547,7 @@ const LFS = (() => {
      sales/rentals/expenses/customers/customer-notes, and stock quantities
      (since every sale decrements them) - nothing else.
   */
-  const SALES_PUSH_KEYS = ["lfs_sales", "lfs_rentals", "lfs_expenses", "lfs_customers", "lfs_customer_requests", "lfs_inventory"];
+  const SALES_PUSH_KEYS = ["lfs_sales", "lfs_rentals", "lfs_expenses", "lfs_customers", "lfs_customer_requests", "lfs_inventory", "lfs_sync_log"];
 
   function getGithubConfig() {
     try { return JSON.parse(localStorage.getItem("lfs_github_config") || "{}"); } catch (e) { return {}; }
@@ -653,6 +654,34 @@ const LFS = (() => {
     return { successCount, failCount };
   }
 
+  // Read-only fetch of a single key from GitHub, merged into (and saved
+  // to) local storage - no push involved. Used for Admin to check the
+  // sales sync log, or generally to pick up other devices' changes,
+  // without also sending this device's own data anywhere.
+  async function pullKeyFromGithub(key, token, cfg) {
+    const owner = (cfg.owner || "").trim();
+    const repo = (cfg.repo || "").trim();
+    const branch = (cfg.branch || "main").trim();
+    const pathPrefix = ((cfg.pathPrefix || "data").trim()).replace(/\/$/, "");
+    const filename = SEED_MAP[key].split("/").pop();
+    const filePath = pathPrefix + "/" + filename;
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
+    const getRes = await fetch(`${apiUrl}?ref=${encodeURIComponent(branch)}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
+    });
+    if (!getRes.ok) {
+      if (getRes.status === 404) return get(key); // nothing pushed yet
+      const errData = await getRes.json().catch(() => ({}));
+      throw new Error(`fetch failed (${getRes.status}): ${errData.message || getRes.statusText}`);
+    }
+    const getData = await getRes.json();
+    const remoteValue = JSON.parse(base64ToUtf8(getData.content));
+    const localValue = get(key);
+    const merged = (Array.isArray(remoteValue) && Array.isArray(localValue)) ? mergeRecordsById(remoteValue, localValue) : remoteValue;
+    set(key, merged);
+    return merged;
+  }
+
   /* ---------- social link normalization ----------
      Admin can type a full URL or just a handle (e.g. "@lakshmifancystore")
      - this builds a sensible clickable link either way.
@@ -709,7 +738,7 @@ const LFS = (() => {
     checkPassword, isAuthed, setAuthed, logout, resetAppData,
     formatMoney, todayISO, daysBetween, formatIST, nowISO, normalizeSocialUrl, paintFooter, initGoTop, scrollToTop,
     rentalNetRevenue, applyTheme, DEFAULT_THEME, FONT_PAIRS, FONT_SIZES,
-    getGithubConfig, saveGithubConfig, getGithubToken, setGithubToken, clearGithubToken, pushKeysToGithub, SALES_PUSH_KEYS,
+    getGithubConfig, saveGithubConfig, getGithubToken, setGithubToken, clearGithubToken, pushKeysToGithub, pullKeyFromGithub, SALES_PUSH_KEYS,
     currentEmployeeName, setCurrentEmployeeName,
     activePromotionToday, promotionAppliesTo, anyOtherPromotionEnabled,
     PAYMENT_MODES, REFERRAL_SOURCES
@@ -728,7 +757,7 @@ const LFS_EVENT_TYPES = ["Marriage","Baby Shower","Reception","Engagement","Nami
 /* Build marker - open DevTools Console on any device and check this value
    against the version query string on index.html/admin.html's <script> tags
    to confirm the browser isn't showing a stale cached copy of the app. */
-const LFS_BUILD_VERSION = "2026-08-20";
+const LFS_BUILD_VERSION = "2026-08-21";
 console.info("Lakshmi Fancy Store build:", LFS_BUILD_VERSION);
 
 /* Shared recovery action wired to the "Trouble logging in?" link on both

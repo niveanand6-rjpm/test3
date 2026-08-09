@@ -1,6 +1,22 @@
 # Lakshmi Fancy Store - Store Management SPA
 
-## Latest updates (2026-08-20)
+## Latest updates (2026-08-21)
+
+- **Send Data is now password-protected**, with its own username/password
+  set (and reset) by Admin > Security - separate from both the Sales and
+  Admin login passwords. Opening the tab requires unlocking with these
+  credentials; clicking "Save & Send My Sales Data Now" asks for the exact
+  same username/password **again** as a deliberate confirmation step, so
+  data only goes out when someone authorized is actually there to approve
+  it, not from an idle unlocked device.
+- **Admin > Backup & Export > Sales Sync Log**: every successful send is
+  logged (date/time in IST, the Send Data username used, which sales
+  person was signed in, files sent, and any failures). Admin can hit
+  "Refresh Log from GitHub" to check the latest sync activity without
+  having to push their own data first, plus Print/PDF/CSV export of the
+  log.
+
+## Previous updates (2026-08-20)
 
 - **Fixed the overwrite risk on `inventory.json`, `expenses.json`, and
   `customers.json`** when a sales device pushes: a push now GETs the

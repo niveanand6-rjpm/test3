@@ -22,6 +22,8 @@
   },
   "salesPersonPassword": "sales1111",
   "adminPassword": "admin111",
+  "sendDataUsername": "sendsync",
+  "sendDataPassword": "sync1111",
   "autoBackupHours": 3,
   "theme": {
     "bg": "#FBF7F1",

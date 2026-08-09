@@ -1245,14 +1245,21 @@ function downloadRecentSummaryCSV() {
    promotions, loyalty rules, rental rates/commission, or the image
    library, which stay admin-only so a stale sales-device cache can
    never overwrite the admin's real configuration).
+
+   Gated by its own username/password (set by Admin > Security), asked
+   once to open the tab and asked AGAIN right before the actual send -
+   a deliberate double-check so data only goes out during an authorized
+   shift, not by an accidental tap.
    ============================================================ */
 function renderSendData() {
+  if (!LFS.isAuthed("lfs_auth_senddata")) return renderSendDataLogin();
+
   const ghCfg = LFS.getGithubConfig();
   const hasToken = !!LFS.getGithubToken();
   const lastPush = localStorage.getItem("lfs_github_last_push_sales") || "Never";
   return `
     <div class="card">
-      <h2>🐙 Send Data to GitHub</h2>
+      <div class="flex-between"><h2 style="margin:0;">🐙 Send Data to GitHub</h2><button class="logout-btn" style="color:var(--maroon);border-color:var(--maroon);" onclick="lockSendData()">Lock</button></div>
       <p class="text-soft">Pushes <strong>this device's</strong> Daily Sales, Rentals, Expenses, Customers, Customer Notes, and Stock quantities straight into the shop's GitHub repo. It does not touch store settings, staff records, promotions, or pricing - those stay admin-only. This is a one-way, on-demand push - it doesn't pull other devices' data.</p>
       <form id="sendDataForm">
         <div class="grid cols-2">
@@ -1280,18 +1287,56 @@ function renderSendData() {
           <p><strong>What gets sent:</strong> Daily Sales, Rentals, Expenses, Customers, Customer Notes, and current Stock quantities - the records this device actually creates.</p>
           <p><strong>What never gets sent from here:</strong> store settings, staff/attendance, promotions, loyalty and points rules, rental item rates/commission, and the image library. Only the Admin console can update those, so an out-of-date sales device can never accidentally overwrite the admin's setup.</p>
           <p><strong>Ask the admin for the repo details and your own token</strong> - each device should have its own Personal Access Token (scoped to just this repo, "Contents: Read and write" only) so it can be individually revoked if a phone or tablet is lost. Don't share one token across multiple devices.</p>
+          <p><strong>You'll be asked for the Send Data password once more</strong> right before it actually sends, just to confirm it's really you, right now.</p>
           <p><strong>This is a manual push, not live sync</strong> - send your data at the end of a shift or whenever you want it backed up. Other devices (including the admin's) won't see it until they resync from GitHub.</p>
         </div>
       </details>
     </div>
+    <div id="sendDataConfirmSlot"></div>
   `;
 }
+
+function renderSendDataLogin() {
+  return `
+    <div class="card">
+      <h2>🔒 Send Data - Locked</h2>
+      <p class="text-soft">This section needs its own username and password, set by the Admin, to help make sure data only gets sent by an authorized person during their shift.</p>
+      <form id="sendDataLoginForm" style="max-width:340px;">
+        <div class="field"><label>Username</label><input type="text" id="sdLoginUser" required autofocus></div>
+        <div class="field"><label>Password</label><input type="password" id="sdLoginPass" required></div>
+        <div class="error-msg hidden" id="sdLoginErr">Incorrect username or password.</div>
+        <button class="btn btn-primary mt-8" type="submit">Unlock</button>
+      </form>
+    </div>
+  `;
+}
+function attemptSendDataUnlock(e) {
+  e.preventDefault();
+  const user = document.getElementById("sdLoginUser").value.trim();
+  const pass = document.getElementById("sdLoginPass").value;
+  const s = LFS.get("lfs_settings");
+  if (user === (s.sendDataUsername || "") && pass === (s.sendDataPassword || "") && user) {
+    LFS.setAuthed("lfs_auth_senddata");
+    renderTab();
+  } else {
+    document.getElementById("sdLoginErr").classList.remove("hidden");
+  }
+}
+function lockSendData() {
+  LFS.logout("lfs_auth_senddata");
+  renderTab();
+}
+
 function clearSalesGithubToken() {
   LFS.clearGithubToken();
   toast("Saved GitHub token cleared from this device");
   renderTab();
 }
-async function pushSalesDataToGithub(e) {
+
+// Step 1: validate repo/token fields, then ask for the Send Data
+// credentials ONE MORE TIME as a deliberate "are you sure, right now"
+// confirmation before anything actually goes out.
+function pushSalesDataToGithub(e) {
   if (e) e.preventDefault();
   const owner = document.getElementById("sdGhOwner").value.trim();
   const repo = document.getElementById("sdGhRepo").value.trim();
@@ -1307,6 +1352,42 @@ async function pushSalesDataToGithub(e) {
   LFS.saveGithubConfig(cfg);
   if (tokenInput) LFS.setGithubToken(tokenInput);
 
+  const slot = document.getElementById("sendDataConfirmSlot");
+  slot.innerHTML = `
+    <div class="modal-backdrop" onclick="if(event.target===this) closeSendDataConfirm()">
+      <div class="modal" style="max-width:360px;">
+        <button class="modal-close" onclick="closeSendDataConfirm()">&times;</button>
+        <h3>Confirm Send</h3>
+        <p class="text-soft">Please re-enter the Send Data username and password to confirm you want to send now.</p>
+        <form id="sendDataConfirmForm">
+          <div class="field"><label>Username</label><input type="text" id="sdConfirmUser" required autofocus></div>
+          <div class="field"><label>Password</label><input type="password" id="sdConfirmPass" required></div>
+          <div class="error-msg hidden" id="sdConfirmErr">Incorrect username or password.</div>
+          <button class="btn btn-gold mt-8" type="submit" style="width:100%;">Confirm &amp; Send</button>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("sendDataConfirmForm").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const user = document.getElementById("sdConfirmUser").value.trim();
+    const pass = document.getElementById("sdConfirmPass").value;
+    const s = LFS.get("lfs_settings");
+    if (user === (s.sendDataUsername || "") && pass === (s.sendDataPassword || "") && user) {
+      closeSendDataConfirm();
+      actuallySendSalesData(cfg, token, user);
+    } else {
+      document.getElementById("sdConfirmErr").classList.remove("hidden");
+    }
+  });
+}
+function closeSendDataConfirm() {
+  const slot = document.getElementById("sendDataConfirmSlot");
+  if (slot) slot.innerHTML = "";
+}
+
+// Step 2: the actual push, run only after re-confirmation succeeds.
+async function actuallySendSalesData(cfg, token, confirmedUsername) {
   const statusEl = document.getElementById("sendDataStatus");
   statusEl.innerHTML = "";
   const log = (msg, isError) => {
@@ -1317,8 +1398,18 @@ async function pushSalesDataToGithub(e) {
     statusEl.appendChild(line);
   };
 
-  log("Sending sales data to " + owner + "/" + repo + " (" + branch + ")...");
+  log("Sending sales data to " + cfg.owner + "/" + cfg.repo + " (" + cfg.branch + ")...");
   const { successCount, failCount } = await LFS.pushKeysToGithub(LFS.SALES_PUSH_KEYS, token, cfg, log);
+
+  const logEntries = LFS.get("lfs_sync_log");
+  logEntries.push({
+    id: LFS.uid("sync"),
+    createdAt: LFS.nowISO(),
+    username: confirmedUsername,
+    employee: LFS.currentEmployeeName() || "",
+    successCount, failCount
+  });
+  LFS.set("lfs_sync_log", logEntries);
 
   log(`Done. ${successCount} succeeded, ${failCount} failed.`);
   if (failCount === 0) {
@@ -1422,4 +1513,5 @@ function wireTabEvents() {
   const f3 = document.getElementById("reqForm"); if (f3) f3.addEventListener("submit", submitRequest);
   const f4 = document.getElementById("dailyExpenseForm"); if (f4) f4.addEventListener("submit", submitDailyExpense);
   const f5 = document.getElementById("sendDataForm"); if (f5) f5.addEventListener("submit", pushSalesDataToGithub);
+  const f6 = document.getElementById("sendDataLoginForm"); if (f6) f6.addEventListener("submit", attemptSendDataUnlock);
 }

@@ -2125,6 +2125,7 @@ function savePersonalization(e) {
    SECURITY (password reset - both Admin and Sales team)
    ============================================================ */
 function renderSecurityModule() {
+  const s = LFS.get("lfs_settings");
   return `
     <div class="card">
       <h2>🔐 Security &amp; Passwords</h2>
@@ -2135,7 +2136,15 @@ function renderSecurityModule() {
           <div class="field"><label>New Sales Team Password</label><input type="password" id="secNewSales" placeholder="Leave blank to keep unchanged"></div>
           <div class="field"><label>New Admin Password</label><input type="password" id="secNewAdmin" placeholder="Leave blank to keep unchanged"></div>
         </div>
-        <button class="btn btn-primary" type="submit">Update Passwords</button>
+
+        <h3 class="mt-16">🐙 Sales Person "Send Data" Credentials</h3>
+        <p class="text-soft">Separate username &amp; password required to unlock the sales app's Send Data tab, and asked again to confirm right before each send - keeps the GitHub push deliberate and limits it to shift hours rather than something anyone can tap by accident. Current username: <strong>${escapeHtml(s.sendDataUsername || "(not set)")}</strong></p>
+        <div class="grid cols-2">
+          <div class="field"><label>New Send Data Username</label><input type="text" id="secNewSendDataUser" placeholder="Leave blank to keep unchanged"></div>
+          <div class="field"><label>New Send Data Password</label><input type="password" id="secNewSendDataPass" placeholder="Leave blank to keep unchanged"></div>
+        </div>
+
+        <button class="btn btn-primary mt-16" type="submit">Update Credentials</button>
       </form>
     </div>
   `;
@@ -2147,11 +2156,16 @@ function saveSecurity(e) {
   const s = LFS.get("lfs_settings");
   const newSales = document.getElementById("secNewSales").value;
   const newAdmin = document.getElementById("secNewAdmin").value;
+  const newSendDataUser = document.getElementById("secNewSendDataUser").value.trim();
+  const newSendDataPass = document.getElementById("secNewSendDataPass").value;
   if (newSales) s.salesPersonPassword = newSales;
   if (newAdmin) s.adminPassword = newAdmin;
+  if (newSendDataUser) s.sendDataUsername = newSendDataUser;
+  if (newSendDataPass) s.sendDataPassword = newSendDataPass;
   LFS.set("lfs_settings", s);
   document.getElementById("securityForm").reset();
-  toast("Passwords updated");
+  toast("Credentials updated");
+  renderAdminModule();
 }
 
 /* ============================================================
@@ -2220,7 +2234,50 @@ function renderBackupModule() {
         </div>
       </details>
     </div>
+    <div class="card">
+      <div class="flex-between"><h2 style="margin:0;">📋 Sales Sync Log</h2>
+        <div class="flex gap-8">
+          <button class="btn btn-outline btn-sm" onclick="refreshSyncLog()">Refresh Log from GitHub</button>
+          <button class="btn btn-outline btn-sm" onclick="printSyncLogReport()">Print</button>
+          <button class="btn btn-outline btn-sm" onclick="downloadSyncLogPDF()">PDF</button>
+          <button class="btn btn-outline btn-sm" onclick="LFS.downloadCSV('sync_log.csv', LFS.get('lfs_sync_log'))">CSV</button>
+        </div>
+      </div>
+      <p class="text-soft">Every time a sales device successfully unlocks and sends data, it logs itself here (this device picks up new entries whenever it pushes or pulls from GitHub - click "Refresh Log" for an instant check without pushing your own data).</p>
+      <div class="table-wrap mt-8">
+        <table>
+          <thead><tr><th>Date/Time (IST)</th><th>Sales Username</th><th>Sales Person</th><th>Files Sent</th><th>Failed</th></tr></thead>
+          <tbody>${syncLogRows().length ? syncLogRows().map(r => `<tr><td>${r.time}</td><td>${escapeHtml(r.username)}</td><td>${escapeHtml(r.employee)}</td><td>${r.successCount}</td><td>${r.failCount > 0 ? `<span class="badge badge-rented">${r.failCount}</span>` : "0"}</td></tr>`).join("") : `<tr><td colspan="5" class="text-soft">No sync activity logged yet.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
   `;
+}
+function syncLogRows() {
+  return LFS.get("lfs_sync_log").slice().sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    .map(l => ({ time: LFS.formatIST(l.createdAt), username: l.username || "-", employee: l.employee || "-", successCount: l.successCount || 0, failCount: l.failCount || 0 }));
+}
+function printSyncLogReport() {
+  LFS.printReport("Sales Sync Log", LFS.tableHtml(syncLogRows(), [
+    { key: "time", label: "Date/Time (IST)" }, { key: "username", label: "Sales Username" }, { key: "employee", label: "Sales Person" }, { key: "successCount", label: "Files Sent" }, { key: "failCount", label: "Failed" }
+  ]));
+}
+function downloadSyncLogPDF() {
+  LFS.downloadPDF("Sales Sync Log", syncLogRows(), [
+    { key: "time", label: "Date/Time (IST)" }, { key: "username", label: "Sales Username" }, { key: "employee", label: "Sales Person" }, { key: "successCount", label: "Files Sent" }, { key: "failCount", label: "Failed" }
+  ]);
+}
+async function refreshSyncLog() {
+  const cfg = LFS.getGithubConfig();
+  const token = LFS.getGithubToken();
+  if (!cfg.owner || !cfg.repo || !token) { toast("Set up GitHub Sync above first (repo + token)"); return; }
+  try {
+    await LFS.pullKeyFromGithub("lfs_sync_log", token, cfg);
+    toast("Sync log refreshed");
+    renderAdminModule();
+  } catch (err) {
+    toast("Could not refresh log: " + err.message);
+  }
 }
 function clearGithubToken() {
   LFS.clearGithubToken();
