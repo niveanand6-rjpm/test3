@@ -5,13 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Admin - Lakshmi Fancy Store</title>
 <link rel="stylesheet" href="css/style.css">
-<!-- PDF export -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<!-- Excel (.xlsx) bulk upload/download support -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<!-- Sales overview charts -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -47,14 +40,12 @@
     <nav class="tab-nav" style="flex-wrap:wrap;position:static;box-shadow:none;">
       <button class="tab-btn active" data-mod="stock" onclick="switchAdminModule('stock')">Stock</button>
       <button class="tab-btn" data-mod="rentalInv" onclick="switchAdminModule('rentalInv')">Rental Inventory</button>
-      <button class="tab-btn" data-mod="images" onclick="switchAdminModule('images')">Image Portal</button>
       <button class="tab-btn" data-mod="staff" onclick="switchAdminModule('staff')">Staff</button>
       <button class="tab-btn" data-mod="expenses" onclick="switchAdminModule('expenses')">Expenses</button>
       <button class="tab-btn" data-mod="usage" onclick="switchAdminModule('usage')">Jewellery Usage</button>
       <button class="tab-btn" data-mod="salesReport" onclick="switchAdminModule('salesReport')">Sales Report</button>
       <button class="tab-btn" data-mod="customers" onclick="switchAdminModule('customers')">Customers</button>
       <button class="tab-btn" data-mod="loyalty" onclick="switchAdminModule('loyalty')">Loyalty &amp; Discounts</button>
-      <button class="tab-btn" data-mod="promotions" onclick="switchAdminModule('promotions')">Promotions</button>
       <button class="tab-btn" data-mod="personalization" onclick="switchAdminModule('personalization')">Store Setup</button>
       <button class="tab-btn" data-mod="security" onclick="switchAdminModule('security')">Security</button>
       <button class="tab-btn" data-mod="backup" onclick="switchAdminModule('backup')">Backup &amp; Export</button>

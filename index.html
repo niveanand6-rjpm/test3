@@ -5,9 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Lakshmi Fancy Store</title>
 <link rel="stylesheet" href="css/style.css">
-<!-- PDF export for printable reports/bills -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 
@@ -37,7 +34,6 @@
         <div class="sub" id="storeSubSlot"></div>
       </div>
       <div class="spacer"></div>
-      <select id="employeeSelect" class="employee-select" onchange="onEmployeeChange(this.value)" title="Sales person on duty"></select>
       <button class="logout-btn" onclick="doLogout()">Lock</button>
     </header>
 
@@ -45,7 +41,6 @@
       <button class="tab-btn active" data-tab="daily" onclick="switchTab('daily')">🛍️ Daily Sales</button>
       <button class="tab-btn" data-tab="rental" onclick="switchTab('rental')">💍 Rental</button>
       <button class="tab-btn" data-tab="catalog" onclick="switchTab('catalog')">📋 Catalog</button>
-      <button class="tab-btn" data-tab="expenses" onclick="switchTab('expenses')">🧾 Expenses</button>
     </nav>
 
     <main id="mainContent"></main>
