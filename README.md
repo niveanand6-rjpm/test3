@@ -1,6 +1,35 @@
 # Lakshmi Fancy Store - Store Management SPA (v15)
 
-## Latest updates (2026-08-26) - Passwords now sync automatically, not just on request
+## Latest updates (2026-08-27) - Fixed Image Portal multi-upload
+
+Found and fixed two real, silent-failure bugs behind "uploading multiple
+photos does nothing and I can't see the images":
+
+- **`LFS.set()` had no error handling.** `localStorage.setItem()` throws
+  when the ~5-10MB per-origin quota is exceeded, which several
+  full-resolution phone photos in one upload can easily do. Nothing
+  caught that error, so the save failed with zero feedback - no toast,
+  no re-render, nothing. Now `LFS.set()` returns `true`/`false`, and
+  every image-saving flow (Image Portal, Stock item, Rental item, Store
+  logo/QR codes) checks it and shows a clear message if storage is full.
+- **A single bad file silently killed the whole batch.** The old code had
+  no `reader.onerror` handler, so if even one file in a multi-upload
+  failed to read, the "all files done" counter never reached zero and
+  *nothing* saved - including the files that read successfully. Now each
+  file is handled independently; a failure on one doesn't block the
+  others, and you get a summary of exactly what succeeded and what
+  didn't.
+- **Added client-side image compression** (`LFS.readAndCompressImage`) -
+  every photo (Image Portal, Stock, Rental, Logo, QR codes) is now
+  resized to a sensible max dimension and re-encoded as JPEG before it's
+  stored, typically shrinking a multi-MB phone photo to well under
+  300KB. This is the actual fix for hitting the storage quota in the
+  first place, not just better error messages after the fact.
+- Verified with a trace test of both failure modes (one corrupt file in
+  a batch; a save that hits the quota) - both now behave correctly
+  instead of failing silently.
+
+## Previous updates (2026-08-26) - Passwords now sync automatically, not just on request
 
 - **Sales, Send Data, and Gallery logins now check the live GitHub-deployed
   password first**, every time - not the browser's local cache. Falls back

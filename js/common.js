@@ -65,8 +65,19 @@ const LFS = (() => {
   }
 
   function set(key, value) {
-    localStorage.setItem(key, JSON.stringify(value));
-    localStorage.setItem("lfs_last_modified", new Date().toISOString());
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+      localStorage.setItem("lfs_last_modified", new Date().toISOString());
+      return true;
+    } catch (e) {
+      // Most commonly QuotaExceededError - localStorage is capped around
+      // 5-10MB per origin, and full-resolution photos add up fast. Let the
+      // caller know instead of failing silently (this used to be a real
+      // bug: Image Portal multi-uploads would just do nothing with no
+      // error at all when this was hit).
+      console.error("LFS.set failed for", key, e);
+      return false;
+    }
   }
 
   function uid(prefix) {
@@ -433,6 +444,48 @@ const LFS = (() => {
   function currentEmployeeName() { return sessionStorage.getItem("lfs_current_employee") || ""; }
   function setCurrentEmployeeName(name) { sessionStorage.setItem("lfs_current_employee", name || ""); }
 
+  /* ---------- image compression ----------
+     Every item/logo/QR photo ends up base64-encoded inside localStorage,
+     which is capped around 5-10MB total per origin - a handful of
+     full-resolution modern phone photos (often several MB each) can burn
+     through that in a single upload. This resizes to a sensible max
+     dimension and re-encodes as JPEG before it's ever stored, which
+     typically shrinks a multi-MB photo down to well under 300KB with no
+     visible quality loss for a product photo - the actual fix for
+     hitting the storage quota, not just a symptom patch.
+  */
+  function readAndCompressImage(file, maxDim, quality) {
+    maxDim = maxDim || 1000;
+    quality = quality || 0.82;
+    return new Promise((resolve, reject) => {
+      if (!file) { resolve(""); return; }
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error(`Could not read "${file.name || "file"}"`));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error(`"${file.name || "file"}" doesn't look like a valid image`));
+        img.onload = () => {
+          let w = img.naturalWidth, h = img.naturalHeight;
+          if (w > maxDim || h > maxDim) {
+            if (w >= h) { h = Math.round(h * (maxDim / w)); w = maxDim; }
+            else { w = Math.round(w * (maxDim / h)); h = maxDim; }
+          }
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL("image/jpeg", quality));
+          } catch (e) {
+            resolve(reader.result); // canvas unavailable for some reason - fall back to the uncompressed original
+          }
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
   /* ---------- promotions / celebration discounts ----------
      Returns the single active promotion for today, or null. Only one
      promotion can ever be enabled at a time (enforced when admin saves/
@@ -777,7 +830,7 @@ const LFS = (() => {
     formatMoney, todayISO, daysBetween, formatIST, nowISO, normalizeSocialUrl, paintFooter, initGoTop, scrollToTop,
     rentalNetRevenue, applyTheme, DEFAULT_THEME, FONT_PAIRS, FONT_SIZES,
     getGithubConfig, saveGithubConfig, getGithubToken, setGithubToken, clearGithubToken, pushKeysToGithub, pullKeyFromGithub, SALES_PUSH_KEYS,
-    currentEmployeeName, setCurrentEmployeeName,
+    currentEmployeeName, setCurrentEmployeeName, readAndCompressImage,
     activePromotionToday, promotionAppliesTo, anyOtherPromotionEnabled,
     PAYMENT_MODES, REFERRAL_SOURCES
   };
@@ -795,7 +848,7 @@ const LFS_EVENT_TYPES = ["Marriage","Baby Shower","Reception","Engagement","Nami
 /* Build marker - open DevTools Console on any device and check this value
    against the version query string on index.html/admin.html's <script> tags
    to confirm the browser isn't showing a stale cached copy of the app. */
-const LFS_BUILD_VERSION = "2026-08-26";
+const LFS_BUILD_VERSION = "2026-08-27";
 console.info("Lakshmi Fancy Store build:", LFS_BUILD_VERSION);
 
 /* Shared recovery action wired to the "Trouble logging in?" link on both

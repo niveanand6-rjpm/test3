@@ -129,9 +129,10 @@ function escapeHtml(s) {
 }
 function readImageAsDataURL(input, cb) {
   if (!input.files || !input.files[0]) { cb(""); return; }
-  const reader = new FileReader();
-  reader.onload = () => cb(reader.result);
-  reader.readAsDataURL(input.files[0]);
+  LFS.readAndCompressImage(input.files[0]).then(cb).catch((err) => {
+    toast(err.message || "Could not read that image");
+    cb(""); // keep whatever image was already there rather than hanging the save
+  });
 }
 
 /* ============================================================
@@ -162,26 +163,44 @@ function renderImagesModule() {
     </div>
   `;
 }
-function saveImageUpload(e) {
+async function saveImageUpload(e) {
   e.preventDefault();
   const input = document.getElementById("imgUploadInput");
   const files = Array.from(input.files || []);
   if (!files.length) return;
+
+  const submitBtn = document.querySelector("#imageUploadForm button[type=submit]");
+  const originalLabel = submitBtn ? submitBtn.textContent : "";
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = `Uploading 0/${files.length}...`; }
+
   const images = LFS.get("lfs_images");
-  let remaining = files.length;
-  files.forEach(file => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      images.push({ id: LFS.uid("img"), name: file.name.replace(/\.[^.]+$/, ""), dataUrl: reader.result, uploadedAt: new Date().toISOString() });
-      remaining--;
-      if (remaining === 0) {
-        LFS.set("lfs_images", images);
-        toast("Image(s) added to library");
-        renderAdminModule();
-      }
-    };
-    reader.readAsDataURL(file);
-  });
+  const errors = [];
+  let done = 0;
+  for (const file of files) {
+    try {
+      const dataUrl = await LFS.readAndCompressImage(file);
+      images.push({ id: LFS.uid("img"), name: file.name.replace(/\.[^.]+$/, ""), dataUrl, uploadedAt: new Date().toISOString() });
+    } catch (err) {
+      errors.push(err.message || `Could not read "${file.name}"`);
+    }
+    done++;
+    if (submitBtn) submitBtn.textContent = `Uploading ${done}/${files.length}...`;
+  }
+
+  if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = originalLabel; }
+
+  const saved = LFS.set("lfs_images", images);
+  if (!saved) {
+    toast("Could not save - this device's storage is full. Try uploading fewer photos at once, or delete some existing library images first.");
+    return; // don't re-render on top of a save that didn't actually happen
+  }
+
+  if (errors.length) {
+    toast(`Added ${files.length - errors.length} of ${files.length} image(s) - ${errors.length} failed: ${errors.join("; ")}`);
+  } else {
+    toast(`${files.length} image(s) added to library`);
+  }
+  renderAdminModule();
 }
 function deleteLibraryImage(id) {
   if (!confirm("Delete this image from the library?")) return;
@@ -318,7 +337,7 @@ function saveStockItem(e) {
       updatedAt: LFS.nowISO()
     };
     if (id) { items[items.findIndex(i => i.id === id)] = data; } else { items.push(data); }
-    LFS.set("lfs_inventory", items);
+    if (!LFS.set("lfs_inventory", items)) { toast("Could not save - this device's storage is full. Try a smaller image, or free up space in Image Portal."); return; }
     EDIT_STOCK_ID = null;
     STOCK_PICKED_IMAGE = null;
     toast("Stock item saved");
@@ -467,7 +486,7 @@ function saveRentalItem(e) {
       totalEarned: existing ? existing.totalEarned || 0 : 0
     };
     if (id) { items[items.findIndex(i => i.id === id)] = data; } else { items.push(data); }
-    LFS.set("lfs_rental_items", items);
+    if (!LFS.set("lfs_rental_items", items)) { toast("Could not save - this device's storage is full. Try a smaller image, or free up space in Image Portal."); return; }
     EDIT_RENTAL_ID = null;
     RENTAL_PICKED_IMAGE = null;
     toast("Rental item saved");
@@ -2120,7 +2139,7 @@ function savePersonalization(e) {
         fontSize: document.getElementById("pThemeFontSize").value
       }
     };
-    LFS.set("lfs_settings", updated);
+    if (!LFS.set("lfs_settings", updated)) { toast("Could not save - this device's storage is full. Try smaller logo/QR images, or free up space in Image Portal."); return; }
     toast("Store settings saved");
     LFS.applyTheme();
     paintAdminHeader();
