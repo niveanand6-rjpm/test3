@@ -376,7 +376,10 @@ const LFS = (() => {
   function setCurrentEmployeeName(name) { sessionStorage.setItem("lfs_current_employee", name || ""); }
 
   /* ---------- promotions / celebration discounts ----------
-     Returns the best (highest %) active promotion for today, or null.
+     Returns the single active promotion for today, or null. Only one
+     promotion can ever be enabled at a time (enforced when admin saves/
+     toggles a promotion), so this simply checks whether today matches
+     the one that's currently enabled.
   */
   function activePromotionToday() {
     const promos = get("lfs_promotions").filter(p => p.enabled);
@@ -395,7 +398,37 @@ const LFS = (() => {
     return best;
   }
 
+  // Whether a promotion's scope covers this sale: module is "dailySale" or
+  // "rental"; category is the item's category (e.g. "Imitation Jewellery").
+  // Empty/missing scope arrays mean "applies to everything".
+  function promotionAppliesTo(promo, module, category) {
+    if (!promo) return false;
+    const modules = promo.appliesToModules;
+    const cats = promo.appliesToCategories;
+    const moduleOk = !modules || !modules.length || modules.includes(module);
+    const catOk = !cats || !cats.length || !category || cats.includes(category);
+    return moduleOk && catOk;
+  }
+
+  function anyOtherPromotionEnabled(excludeId) {
+    return get("lfs_promotions").some(p => p.enabled && p.id !== excludeId);
+  }
+
   const PAYMENT_MODES = ["Cash", "GPay", "PhonePe", "Card", "Other UPI", "Other"];
+  const REFERRAL_SOURCES = ["Walk-in / Passing by", "Google Search", "Instagram", "Facebook", "Friend / Family Referral", "Newspaper / Flyer Ad", "Repeat Customer", "Other"];
+
+  // Formats an ISO timestamp (or Date) as IST date + time, regardless of the
+  // viewing device's own timezone/locale - so every report shows the actual
+  // shop-local time a sale/rental/expense happened.
+  function formatIST(dateInput) {
+    if (!dateInput) return "";
+    const d = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
+    if (isNaN(d.getTime())) return "";
+    const datePart = d.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" });
+    const timePart = d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true });
+    return `${datePart}, ${timePart} IST`;
+  }
+  function nowISO() { return new Date().toISOString(); }
 
   return {
     SEED_MAP, ALL_KEYS, init, get, set, uid,
@@ -404,9 +437,10 @@ const LFS = (() => {
     downloadPDF, printReport, tableHtml,
     isValidPhone, isValidEmail, isValidAmount,
     checkPassword, isAuthed, setAuthed, logout, resetAppData,
-    formatMoney, todayISO, daysBetween,
+    formatMoney, todayISO, daysBetween, formatIST, nowISO,
     currentEmployeeName, setCurrentEmployeeName,
-    activePromotionToday, PAYMENT_MODES
+    activePromotionToday, promotionAppliesTo, anyOtherPromotionEnabled,
+    PAYMENT_MODES, REFERRAL_SOURCES
   };
 })();
 
@@ -422,7 +456,7 @@ const LFS_EVENT_TYPES = ["Marriage","Baby Shower","Reception","Engagement","Nami
 /* Build marker - open DevTools Console on any device and check this value
    against the version query string on index.html/admin.html's <script> tags
    to confirm the browser isn't showing a stale cached copy of the app. */
-const LFS_BUILD_VERSION = "2026-08-10";
+const LFS_BUILD_VERSION = "2026-08-12";
 console.info("Lakshmi Fancy Store build:", LFS_BUILD_VERSION);
 
 /* Shared recovery action wired to the "Trouble logging in?" link on both

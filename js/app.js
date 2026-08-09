@@ -144,7 +144,7 @@ function renderDailySales() {
     <div class="card">
       <h2>Daily Sales Entry</h2>
       <p class="text-soft">Quick sale of small fancy items from current stock.</p>
-      ${promo ? `<div class="success-note">🎉 ${escapeHtml(promo.name)} promotion is live today - ${promo.discountPercent}% off available.</div>` : ""}
+      ${promo ? `<div class="success-note">🎉 ${escapeHtml(promo.name)} promotion is live today - ${promo.discountPercent}% off (${describePromoScopeShort(promo)}).</div>` : ""}
       <form id="dailySaleForm">
         <div class="grid cols-2">
           <div class="field">
@@ -172,10 +172,15 @@ function renderDailySales() {
         </div>
         <div class="field">
           <label>Item</label>
-          <select id="dsItem" onchange="updateDailySaleTotals()">
+          <select id="dsItem" onchange="onDailyItemChange()">
             <option value="">-- Select item --</option>
             ${options}
+            <option value="__other__">Others (custom item)</option>
           </select>
+        </div>
+        <div id="dsOtherFields" class="grid cols-2 hidden">
+          <div class="field"><label>Item Description *</label><input type="text" id="dsOtherDesc" placeholder="Describe the item sold"></div>
+          <div class="field"><label>Unit Price (₹) *</label><input type="number" id="dsOtherPrice" min="0" value="0" oninput="updateDailySaleTotals()"></div>
         </div>
         <div class="grid cols-3">
           <div class="field">
@@ -183,7 +188,7 @@ function renderDailySales() {
             <input type="number" id="dsQty" min="1" value="1" oninput="updateDailySaleTotals()">
           </div>
           <div class="field">
-            <label>Discount (₹) <span class="text-soft" id="dsDiscountHint"></span></label>
+            <label>Discount (₹)</label>
             <input type="number" id="dsDiscount" min="0" value="0" oninput="updateDailySaleTotals()">
           </div>
           <div class="field">
@@ -199,18 +204,30 @@ function renderDailySales() {
       <div class="flex-between"><h3 style="margin:0;">Recent Sales</h3><button class="btn btn-outline btn-sm" onclick="printDailySalesReportSales()">Print All</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Date</th><th>Item</th><th>Qty</th><th>Customer</th><th>Payment</th><th>Total</th><th></th></tr></thead>
+          <thead><tr><th>Date</th><th>Time (IST)</th><th>Item</th><th>Qty</th><th>Customer</th><th>Payment</th><th>Total</th><th></th></tr></thead>
           <tbody>
             ${sales.map(s => `<tr>
-              <td>${s.date}</td><td>${escapeHtml(s.itemName)}</td><td>${s.quantity}</td><td>${escapeHtml(s.customerName || "Walk-in")}</td>
+              <td>${s.date}</td><td>${LFS.formatIST(s.createdAt)}</td><td>${escapeHtml(s.itemName)}</td><td>${s.quantity}</td><td>${escapeHtml(s.customerName || "Walk-in")}</td>
               <td>${paymentBadge(s.paymentMode)}</td><td>${LFS.formatMoney(s.total)}</td>
               <td><button class="btn btn-outline btn-sm" onclick="printSaleReceipt('${s.id}')">Print</button></td>
-            </tr>`).join("") || `<tr><td colspan="7" class="text-soft">No sales recorded yet.</td></tr>`}
+            </tr>`).join("") || `<tr><td colspan="8" class="text-soft">No sales recorded yet.</td></tr>`}
           </tbody>
         </table>
       </div>
     </div>
   `;
+}
+
+function describePromoScopeShort(p) {
+  const cats = (p.appliesToCategories && p.appliesToCategories.length) ? p.appliesToCategories.join(", ") : "all categories";
+  return cats;
+}
+
+function onDailyItemChange() {
+  const isOther = document.getElementById("dsItem").value === "__other__";
+  document.getElementById("dsOtherFields").classList.toggle("hidden", !isOther);
+  updateDailySaleTotals();
+  refreshDailyDiscountBlock();
 }
 
 function paymentBadge(mode) {
@@ -220,9 +237,9 @@ function paymentBadge(mode) {
 
 function printDailySalesReportSales() {
   const sales = LFS.get("lfs_sales").slice().reverse();
-  const rows = sales.map(s => ({ date: s.date, item: s.itemName, qty: s.quantity, customer: s.customerName || "Walk-in", payment: s.paymentMode || "-", total: LFS.formatMoney(s.total) }));
+  const rows = sales.map(s => ({ date: s.date, time: LFS.formatIST(s.createdAt), item: s.itemName, qty: s.quantity, customer: s.customerName || "Walk-in", payment: s.paymentMode || "-", total: LFS.formatMoney(s.total) }));
   LFS.printReport("Daily Sales Report", LFS.tableHtml(rows, [
-    { key: "date", label: "Date" }, { key: "item", label: "Item" }, { key: "qty", label: "Qty" },
+    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "qty", label: "Qty" },
     { key: "customer", label: "Customer" }, { key: "payment", label: "Payment" }, { key: "total", label: "Total" }
   ]));
 }
@@ -252,56 +269,87 @@ function lookupDailyCustomer() {
   const phone = document.getElementById("dsPhone").value.trim();
   const err = document.getElementById("dsPhoneErr");
   err.classList.toggle("hidden", phone.length === 0 || LFS.isValidPhone(phone));
-  document.getElementById("dsLoyaltySlot").innerHTML = "";
-  document.getElementById("dsDiscountHint").textContent = "";
   if (LFS.isValidPhone(phone)) {
     const cust = LFS.get("lfs_customers").find(c => c.phone === phone);
-    if (cust) {
-      document.getElementById("dsName").value = cust.name;
-      renderDailyLoyaltyHints(cust);
+    if (cust) document.getElementById("dsName").value = cust.name;
+  }
+  refreshDailyDiscountBlock();
+}
+
+/* ---------- unified discount engine (repeat / review / promotion / points redemption) ---------- */
+function computeEligibleDiscounts(cust, basisAmount, module, category) {
+  const loyalty = LFS.get("lfs_loyalty");
+  const breakdown = [];
+  let total = 0;
+  if (cust) {
+    if (cust.repeatCustomer && loyalty.repeatCustomerDiscountPercent) {
+      const amt = Math.round(basisAmount * loyalty.repeatCustomerDiscountPercent / 100);
+      if (amt > 0) { breakdown.push({ label: `Repeat customer (${loyalty.repeatCustomerDiscountPercent}%)`, amount: amt }); total += amt; }
+    }
+    if (cust.reviewGiven && loyalty.reviewDiscountAmount) {
+      breakdown.push({ label: `Review discount (${cust.reviewPlatform || "review"})`, amount: loyalty.reviewDiscountAmount });
+      total += Number(loyalty.reviewDiscountAmount);
     }
   }
-}
-
-function renderDailyLoyaltyHints(cust) {
-  const loyalty = LFS.get("lfs_loyalty");
-  let hints = [];
-  if (cust.repeatCustomer) hints.push(`Repeat customer: ${loyalty.repeatCustomerDiscountPercent}% off available`);
-  if (cust.reviewGiven) hints.push(`Review discount: ${LFS.formatMoney(loyalty.reviewDiscountAmount)} available`);
-  document.getElementById("dsDiscountHint").textContent = hints.length ? "(" + hints.join(", ") + ")" : "";
-
-  const redemption = loyalty.redemption || {};
-  const slot = document.getElementById("dsLoyaltySlot");
-  if (redemption.enabled && (cust.loyaltyPoints || 0) >= (redemption.thresholdPoints || 999999)) {
-    const value = (cust.loyaltyPoints || 0) * (redemption.valuePerPoint || 0);
-    slot.innerHTML = `
-      <div class="success-note flex-between">
-        <span>${cust.name} has ${cust.loyaltyPoints} loyalty points - redeemable for ${LFS.formatMoney(value)}.</span>
-        <button type="button" class="btn btn-gold btn-sm" onclick="applyDailySaleRedemption('${cust.id}')">Redeem Points</button>
-      </div>`;
-  } else {
-    slot.innerHTML = "";
+  const promo = LFS.activePromotionToday();
+  if (promo && LFS.promotionAppliesTo(promo, module, category)) {
+    const amt = Math.round(basisAmount * promo.discountPercent / 100);
+    if (amt > 0) { breakdown.push({ label: `${promo.name} (${promo.discountPercent}%)`, amount: amt }); total += amt; }
   }
+  let redemption = null;
+  if (cust && loyalty.redemption && loyalty.redemption.enabled && (cust.loyaltyPoints || 0) >= (loyalty.redemption.thresholdPoints || 999999)) {
+    const val = Math.round((cust.loyaltyPoints || 0) * (loyalty.redemption.valuePerPoint || 0));
+    if (val > 0) { breakdown.push({ label: `Redeem ${cust.loyaltyPoints} points`, amount: val }); total += val; redemption = { customerId: cust.id, points: cust.loyaltyPoints, value: val }; }
+  }
+  return { total, breakdown, redemption };
 }
 
-function applyDailySaleRedemption(custId) {
-  const cust = LFS.get("lfs_customers").find(c => c.id === custId);
-  if (!cust) return;
-  const loyalty = LFS.get("lfs_loyalty");
-  const value = Math.round((cust.loyaltyPoints || 0) * (loyalty.redemption.valuePerPoint || 0));
-  SALE_REDEEM_APPLIED = { customerId: cust.id, points: cust.loyaltyPoints, value };
-  const discountField = document.getElementById("dsDiscount");
-  discountField.value = (Number(discountField.value) || 0) + value;
+function refreshDailyDiscountBlock() {
+  const slot = document.getElementById("dsLoyaltySlot");
+  if (!slot) return;
+  const phone = document.getElementById("dsPhone").value.trim();
+  const cust = LFS.isValidPhone(phone) ? LFS.get("lfs_customers").find(c => c.phone === phone) : null;
+  const itemVal = document.getElementById("dsItem").value;
+  let category = null, basis = 0;
+  if (itemVal === "__other__") {
+    category = "Others";
+    basis = (Number(document.getElementById("dsOtherPrice").value) || 0) * (Number(document.getElementById("dsQty").value) || 1);
+  } else if (itemVal) {
+    const item = LFS.get("lfs_inventory").find(i => i.id === itemVal);
+    if (item) { category = item.category; basis = item.price * (Number(document.getElementById("dsQty").value) || 1); }
+  }
+  if (!cust && !LFS.activePromotionToday()) { slot.innerHTML = ""; return; }
+  const result = computeEligibleDiscounts(cust, basis, "dailySale", category);
+  if (!result.breakdown.length) { slot.innerHTML = ""; return; }
+  slot.innerHTML = `
+    <div class="success-note">
+      <div>${result.breakdown.map(b => `${escapeHtml(b.label)}: ${LFS.formatMoney(b.amount)}`).join("<br>")}</div>
+      <div class="flex-between mt-8">
+        <strong>Total eligible: ${LFS.formatMoney(result.total)}</strong>
+        <button type="button" class="btn btn-gold btn-sm" onclick='applyDailyDiscounts(${JSON.stringify(result).replace(/'/g, "&#39;")})'>Apply Discounts</button>
+      </div>
+    </div>`;
+}
+
+function applyDailyDiscounts(result) {
+  document.getElementById("dsDiscount").value = result.total;
+  SALE_REDEEM_APPLIED = result.redemption || null;
   updateDailySaleTotals();
-  toast(`Applied ${LFS.formatMoney(value)} redemption discount`);
+  toast(`Applied ${LFS.formatMoney(result.total)} in discounts`);
 }
 
 function updateDailySaleTotals() {
-  const inv = LFS.get("lfs_inventory");
-  const item = inv.find(i => i.id === document.getElementById("dsItem").value);
+  const itemVal = document.getElementById("dsItem").value;
   const qty = Number(document.getElementById("dsQty").value) || 0;
   const discount = Number(document.getElementById("dsDiscount").value) || 0;
-  const total = item ? Math.max(0, item.price * qty - discount) : 0;
+  let unitPrice = 0;
+  if (itemVal === "__other__") {
+    unitPrice = Number(document.getElementById("dsOtherPrice").value) || 0;
+  } else if (itemVal) {
+    const item = LFS.get("lfs_inventory").find(i => i.id === itemVal);
+    unitPrice = item ? item.price : 0;
+  }
+  const total = Math.max(0, unitPrice * qty - discount);
   document.getElementById("dsTotal").value = LFS.formatMoney(total);
 }
 
@@ -312,24 +360,39 @@ function submitDailySale(e) {
   LFS.setCurrentEmployeeName(employee);
   const phone = document.getElementById("dsPhone").value.trim();
   if (phone && !LFS.isValidPhone(phone)) { toast("Please enter a valid 10-digit phone number"); return; }
+
+  const itemVal = document.getElementById("dsItem").value;
   const inv = LFS.get("lfs_inventory");
-  const itemId = document.getElementById("dsItem").value;
-  const item = inv.find(i => i.id === itemId);
-  if (!item) { toast("Please select an item"); return; }
+  let item = null, itemName = "", unitPrice = 0, isOther = false;
+  if (itemVal === "__other__") {
+    isOther = true;
+    itemName = document.getElementById("dsOtherDesc").value.trim();
+    if (!itemName) { toast("Please describe the item for this custom sale"); return; }
+    unitPrice = Number(document.getElementById("dsOtherPrice").value) || 0;
+    if (unitPrice <= 0) { toast("Please enter a unit price for the custom item"); return; }
+  } else {
+    item = inv.find(i => i.id === itemVal);
+    if (!item) { toast("Please select an item"); return; }
+    itemName = item.itemName;
+    unitPrice = item.price;
+  }
+
   const qty = Number(document.getElementById("dsQty").value) || 1;
-  if (qty > item.quantityAvailable) { toast(`Only ${item.quantityAvailable} in stock`); return; }
+  if (!isOther && qty > item.quantityAvailable) { toast(`Only ${item.quantityAvailable} in stock`); return; }
   const discount = Number(document.getElementById("dsDiscount").value) || 0;
-  const total = Math.max(0, item.price * qty - discount);
+  const total = Math.max(0, unitPrice * qty - discount);
   const paymentMode = document.getElementById("dsPayment").value;
 
   const sales = LFS.get("lfs_sales");
   sales.push({
     id: LFS.uid("sal"),
     date: LFS.todayISO(),
-    itemId: item.id,
-    itemName: item.itemName,
+    createdAt: LFS.nowISO(),
+    itemId: isOther ? null : item.id,
+    itemName,
+    isCustomItem: isOther,
     quantity: qty,
-    unitPrice: item.price,
+    unitPrice,
     discount,
     total,
     paymentMode,
@@ -339,8 +402,10 @@ function submitDailySale(e) {
   });
   LFS.set("lfs_sales", sales);
 
-  item.quantityAvailable = Math.max(0, item.quantityAvailable - qty);
-  LFS.set("lfs_inventory", inv);
+  if (!isOther) {
+    item.quantityAvailable = Math.max(0, item.quantityAvailable - qty);
+    LFS.set("lfs_inventory", inv);
+  }
 
   // update / create customer + loyalty points
   if (phone) {
@@ -348,7 +413,7 @@ function submitDailySale(e) {
     let cust = customers.find(c => c.phone === phone);
     const loyalty = LFS.get("lfs_loyalty");
     if (!cust) {
-      cust = { id: LFS.uid("cus"), name: document.getElementById("dsName").value.trim() || "Walk-in", phone, address: "", region: "Rajapalayam", loyaltyPoints: 0, repeatCustomer: false, reviewGiven: false, reviewPlatform: "", notes: "" };
+      cust = { id: LFS.uid("cus"), name: document.getElementById("dsName").value.trim() || "Walk-in", phone, address: "", region: "Rajapalayam", howHeard: "", loyaltyPoints: 0, repeatCustomer: false, reviewGiven: false, reviewPlatform: "", notes: "", createdAt: LFS.nowISO() };
       customers.push(cust);
     } else {
       cust.repeatCustomer = true;
@@ -390,7 +455,7 @@ function renderNewRental() {
   return `
     <div class="card">
       <h2>New Rental - POS Terminal</h2>
-      ${promo ? `<div class="success-note">🎉 ${escapeHtml(promo.name)} promotion is live today - ${promo.discountPercent}% off available.</div>` : ""}
+      ${promo ? `<div class="success-note">🎉 ${escapeHtml(promo.name)} promotion is live today - ${promo.discountPercent}% off (${describePromoScopeShort(promo)}).</div>` : ""}
       <form id="rentalForm">
         <div class="grid cols-2">
           <div class="field">
@@ -427,6 +492,10 @@ function renderNewRental() {
           </div>
         </div>
         <div class="field">
+          <label>How did they hear about us? (new customers)</label>
+          <select id="rnHowHeard">${LFS.REFERRAL_SOURCES.map(r => `<option>${r}</option>`).join("")}</select>
+        </div>
+        <div class="field">
           <label>Jewellery Item *</label>
           <select id="rnItem" required onchange="onRentalItemChange()">
             <option value="">-- Select item --</option>
@@ -458,7 +527,7 @@ function renderNewRental() {
             <input type="number" id="rnDeposit" min="0" value="0" oninput="recalcRental()">
           </div>
           <div class="field">
-            <label>Discount (₹) <span class="text-soft" id="rnDiscountHint"></span></label>
+            <label>Discount (₹)</label>
             <input type="number" id="rnDiscount" min="0" value="0" oninput="recalcRental()">
           </div>
         </div>
@@ -532,34 +601,7 @@ function recalcRental() {
   const advance = Number(document.getElementById("rnAdvance").value) || 0;
   let discount = Number(document.getElementById("rnDiscount").value) || 0;
 
-  const phone = document.getElementById("rnPhone").value.trim();
-  const loyalty = LFS.get("lfs_loyalty");
-  const cust = LFS.get("lfs_customers").find(c => c.phone === phone);
-  let hints = [];
-  if (cust && cust.repeatCustomer) hints.push(`Repeat customer discount available: ${loyalty.repeatCustomerDiscountPercent}%`);
-  if (cust && cust.reviewGiven) hints.push(`Review discount available: ${LFS.formatMoney(loyalty.reviewDiscountAmount)}`);
-  if (loyalty.flashSale && loyalty.flashSale.enabled) {
-    const today = LFS.todayISO();
-    if ((!loyalty.flashSale.fromDate || today >= loyalty.flashSale.fromDate) && (!loyalty.flashSale.toDate || today <= loyalty.flashSale.toDate)) {
-      hints.push(`Flash sale active: ${loyalty.flashSale.discountPercent}% off`);
-    }
-  }
-  const promo = LFS.activePromotionToday();
-  if (promo) hints.push(`${promo.name}: ${promo.discountPercent}% off`);
-  document.getElementById("rnDiscountHint").textContent = hints.length ? "(" + hints.join(", ") + ")" : "";
-
-  const loyaltySlot = document.getElementById("rnLoyaltySlot");
-  const redemption = loyalty.redemption || {};
-  if (cust && redemption.enabled && (cust.loyaltyPoints || 0) >= (redemption.thresholdPoints || 999999)) {
-    const value = (cust.loyaltyPoints || 0) * (redemption.valuePerPoint || 0);
-    loyaltySlot.innerHTML = `
-      <div class="success-note flex-between mt-8">
-        <span>${escapeHtml(cust.name)} has ${cust.loyaltyPoints} loyalty points - redeemable for ${LFS.formatMoney(value)}.</span>
-        <button type="button" class="btn btn-gold btn-sm" onclick="applyRentalRedemption('${cust.id}')">Redeem Points</button>
-      </div>`;
-  } else if (loyaltySlot) {
-    loyaltySlot.innerHTML = "";
-  }
+  refreshRentalDiscountBlock();
 
   const returnDate = new Date(date);
   returnDate.setDate(returnDate.getDate() + days);
@@ -571,16 +613,33 @@ function recalcRental() {
   document.getElementById("rnBalance").value = LFS.formatMoney(balance);
 }
 
-function applyRentalRedemption(custId) {
-  const cust = LFS.get("lfs_customers").find(c => c.id === custId);
-  if (!cust) return;
-  const loyalty = LFS.get("lfs_loyalty");
-  const value = Math.round((cust.loyaltyPoints || 0) * (loyalty.redemption.valuePerPoint || 0));
-  RENTAL_REDEEM_APPLIED = { customerId: cust.id, points: cust.loyaltyPoints, value };
-  const discountField = document.getElementById("rnDiscount");
-  discountField.value = (Number(discountField.value) || 0) + value;
+function refreshRentalDiscountBlock() {
+  const slot = document.getElementById("rnLoyaltySlot");
+  if (!slot) return;
+  const phone = document.getElementById("rnPhone").value.trim();
+  const cust = LFS.isValidPhone(phone) ? LFS.get("lfs_customers").find(c => c.phone === phone) : null;
+  const days = Math.max(1, Number(document.getElementById("rnDays").value) || 1);
+  const rate = Number(document.getElementById("rnRate").value) || 0;
+  const category = SELECTED_RENTAL_ITEM ? SELECTED_RENTAL_ITEM.category : null;
+  const basis = rate * days; // percent discounts apply to the rental charge, not the refundable deposit
+  if (!cust && !LFS.activePromotionToday()) { slot.innerHTML = ""; return; }
+  const result = computeEligibleDiscounts(cust, basis, "rental", category);
+  if (!result.breakdown.length) { slot.innerHTML = ""; return; }
+  slot.innerHTML = `
+    <div class="success-note mt-8">
+      <div>${result.breakdown.map(b => `${escapeHtml(b.label)}: ${LFS.formatMoney(b.amount)}`).join("<br>")}</div>
+      <div class="flex-between mt-8">
+        <strong>Total eligible: ${LFS.formatMoney(result.total)}</strong>
+        <button type="button" class="btn btn-gold btn-sm" onclick='applyRentalDiscounts(${JSON.stringify(result).replace(/'/g, "&#39;")})'>Apply Discounts</button>
+      </div>
+    </div>`;
+}
+
+function applyRentalDiscounts(result) {
+  document.getElementById("rnDiscount").value = result.total;
+  RENTAL_REDEEM_APPLIED = result.redemption || null;
   recalcRental();
-  toast(`Applied ${LFS.formatMoney(value)} redemption discount`);
+  toast(`Applied ${LFS.formatMoney(result.total)} in discounts`);
 }
 
 function submitRental(e) {
@@ -613,7 +672,7 @@ function submitRental(e) {
   const customers = LFS.get("lfs_customers");
   let cust = customers.find(c => c.phone === phone);
   if (!cust) {
-    cust = { id: LFS.uid("cus"), name, phone, address, region, loyaltyPoints: 0, repeatCustomer: false, reviewGiven: false, reviewPlatform: "", notes: "" };
+    cust = { id: LFS.uid("cus"), name, phone, address, region, howHeard: document.getElementById("rnHowHeard").value, loyaltyPoints: 0, repeatCustomer: false, reviewGiven: false, reviewPlatform: "", notes: "", createdAt: LFS.nowISO() };
     customers.push(cust);
   } else {
     cust.name = name; cust.address = address; cust.region = region;
@@ -630,6 +689,7 @@ function submitRental(e) {
   const rentals = LFS.get("lfs_rentals");
   const record = {
     id: LFS.uid("ren"),
+    createdAt: LFS.nowISO(),
     rentalItemId: item.id,
     itemName: item.itemName,
     customerPhone: phone,
@@ -688,13 +748,14 @@ function renderHistoricRentals() {
       <div class="flex-between"><h2 style="margin:0;">Active Rentals</h2><button class="btn btn-outline btn-sm" onclick="printRentalsReportSales()">Print All</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Item</th><th>Customer</th><th>Rented</th><th>Due</th><th>Balance</th><th>Settle Via</th><th></th></tr></thead>
+          <thead><tr><th>Item</th><th>Customer</th><th>Rented</th><th>Time (IST)</th><th>Due</th><th>Balance</th><th>Settle Via</th><th></th></tr></thead>
           <tbody>
             ${active.map(r => `
               <tr>
                 <td>${escapeHtml(r.itemName)}</td>
                 <td>${escapeHtml(r.customerName)}<br><span class="text-soft">${r.customerPhone}</span></td>
                 <td>${r.rentalDate}</td>
+                <td>${LFS.formatIST(r.createdAt)}</td>
                 <td>${r.expectedReturnDate}</td>
                 <td>${LFS.formatMoney(r.balance)}</td>
                 <td><select id="settleMode_${r.id}" style="width:110px;">${LFS.PAYMENT_MODES.map(m => `<option>${m}</option>`).join("")}</select></td>
@@ -702,7 +763,7 @@ function renderHistoricRentals() {
                   <button class="btn btn-outline btn-sm" onclick="markReturned('${r.id}')">Mark Returned</button>
                   <button class="btn btn-outline btn-sm" onclick="printRentalReceipt('${r.id}')">Print</button>
                 </td>
-              </tr>`).join("") || `<tr><td colspan="7" class="text-soft">No active rentals.</td></tr>`}
+              </tr>`).join("") || `<tr><td colspan="8" class="text-soft">No active rentals.</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -711,12 +772,12 @@ function renderHistoricRentals() {
       <h2>Rental History</h2>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Item</th><th>Customer</th><th>Rented</th><th>Returned</th><th>Total</th><th></th></tr></thead>
+          <thead><tr><th>Item</th><th>Customer</th><th>Rented</th><th>Time (IST)</th><th>Returned</th><th>Total</th><th></th></tr></thead>
           <tbody>
             ${past.map(r => `<tr>
-              <td>${escapeHtml(r.itemName)}</td><td>${escapeHtml(r.customerName)}</td><td>${r.rentalDate}</td><td>${r.actualReturnDate}</td><td>${LFS.formatMoney(r.total)}</td>
+              <td>${escapeHtml(r.itemName)}</td><td>${escapeHtml(r.customerName)}</td><td>${r.rentalDate}</td><td>${LFS.formatIST(r.createdAt)}</td><td>${r.actualReturnDate}</td><td>${LFS.formatMoney(r.total)}</td>
               <td><button class="btn btn-outline btn-sm" onclick="printRentalReceipt('${r.id}')">Print</button></td>
-            </tr>`).join("") || `<tr><td colspan="6" class="text-soft">No history yet.</td></tr>`}
+            </tr>`).join("") || `<tr><td colspan="7" class="text-soft">No history yet.</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -748,9 +809,9 @@ function printRentalReceipt(rentalId) {
 
 function printRentalsReportSales() {
   const rentals = LFS.get("lfs_rentals").slice().reverse();
-  const rows = rentals.map(r => ({ date: r.rentalDate, item: r.itemName, customer: r.customerName, status: r.status, total: LFS.formatMoney(r.total), balance: LFS.formatMoney(r.balance) }));
+  const rows = rentals.map(r => ({ date: r.rentalDate, time: LFS.formatIST(r.createdAt), item: r.itemName, customer: r.customerName, status: r.status, total: LFS.formatMoney(r.total), balance: LFS.formatMoney(r.balance) }));
   LFS.printReport("Rentals Report", LFS.tableHtml(rows, [
-    { key: "date", label: "Date" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" },
+    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" },
     { key: "status", label: "Status" }, { key: "total", label: "Total" }, { key: "balance", label: "Balance" }
   ]));
 }
@@ -804,9 +865,9 @@ function renderCustomerRequests() {
       <h3>Recent Customer Notes</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Date</th><th>Customer</th><th>Comment</th></tr></thead>
+          <thead><tr><th>Date</th><th>Time (IST)</th><th>Customer</th><th>Comment</th></tr></thead>
           <tbody>
-            ${reqs.map(r => `<tr><td>${r.date}</td><td>${escapeHtml(r.customerName) || "-"} <br><span class="text-soft">${r.customerPhone || ""}</span></td><td>${escapeHtml(r.comment)}</td></tr>`).join("") || `<tr><td colspan="3" class="text-soft">No notes yet.</td></tr>`}
+            ${reqs.map(r => `<tr><td>${r.date}</td><td>${LFS.formatIST(r.createdAt)}</td><td>${escapeHtml(r.customerName) || "-"} <br><span class="text-soft">${r.customerPhone || ""}</span></td><td>${escapeHtml(r.comment)}</td></tr>`).join("") || `<tr><td colspan="4" class="text-soft">No notes yet.</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -820,6 +881,7 @@ function submitRequest(e) {
   reqs.push({
     id: LFS.uid("req"),
     date: LFS.todayISO(),
+    createdAt: LFS.nowISO(),
     customerPhone: document.getElementById("reqPhone").value.trim(),
     customerName: document.getElementById("reqName").value.trim(),
     comment: document.getElementById("reqComment").value.trim(),
@@ -867,8 +929,8 @@ function renderDailyExpenses() {
       <h3>Logged Today</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Time Logged</th><th>Employee</th><th>Description</th><th>Amount</th></tr></thead>
-          <tbody>${mine.map(e => `<tr><td>${new Date(e.loggedAt || Date.now()).toLocaleTimeString()}</td><td>${escapeHtml(e.loggedBy || "")}</td><td>${escapeHtml(e.description)}</td><td>${LFS.formatMoney(e.amount)}</td></tr>`).join("") || `<tr><td colspan="4" class="text-soft">Nothing logged today yet.</td></tr>`}</tbody>
+          <thead><tr><th>Time (IST)</th><th>Employee</th><th>Description</th><th>Amount</th></tr></thead>
+          <tbody>${mine.map(e => `<tr><td>${LFS.formatIST(e.createdAt)}</td><td>${escapeHtml(e.loggedBy || "")}</td><td>${escapeHtml(e.description)}</td><td>${LFS.formatMoney(e.amount)}</td></tr>`).join("") || `<tr><td colspan="4" class="text-soft">Nothing logged today yet.</td></tr>`}</tbody>
         </table>
       </div>
     </div>
@@ -889,7 +951,7 @@ function submitDailyExpense(e) {
     date, month: date.slice(0, 7),
     source: "sales_person",
     loggedBy: employee,
-    loggedAt: Date.now()
+    createdAt: LFS.nowISO()
   });
   LFS.set("lfs_expenses", expenses);
   toast("Expense logged");

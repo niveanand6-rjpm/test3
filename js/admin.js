@@ -79,6 +79,8 @@ function renderAdminModule() {
   document.getElementById("adminMain").innerHTML = ADMIN_RENDERERS[ADMIN_MODULE]();
   wireAdminEvents();
   if (ADMIN_MODULE === "salesReport") setTimeout(initSalesCharts, 0);
+  if (ADMIN_MODULE === "expenses" && EXPENSE_SUBTAB === "trend") setTimeout(initExpenseTrendChart, 0);
+  if (ADMIN_MODULE === "customers") setTimeout(initCustomerChart, 0);
 }
 
 function wireAdminEvents() {
@@ -779,8 +781,9 @@ function renderExpensesModule() {
     <div class="subtab-nav" style="padding:0 0 12px;">
       <button class="subtab-btn ${EXPENSE_SUBTAB === "log" ? "active" : ""}" data-subtab-group="expenses" data-sub="log">Log Store Monthly Expense</button>
       <button class="subtab-btn ${EXPENSE_SUBTAB === "upcoming" ? "active" : ""}" data-subtab-group="expenses" data-sub="upcoming">Upcoming Expenses</button>
+      <button class="subtab-btn ${EXPENSE_SUBTAB === "trend" ? "active" : ""}" data-subtab-group="expenses" data-sub="trend">Past Expenses Trend</button>
     </div>
-    ${EXPENSE_SUBTAB === "log" ? renderExpenseLog() : renderUpcomingExpenses()}
+    ${EXPENSE_SUBTAB === "log" ? renderExpenseLog() : EXPENSE_SUBTAB === "upcoming" ? renderUpcomingExpenses() : renderExpenseTrend()}
   `;
 }
 function renderExpenseLog() {
@@ -810,8 +813,8 @@ function renderExpenseLog() {
       <div class="stat-box mt-8" style="max-width:220px;"><div class="num">${LFS.formatMoney(total)}</div><div class="lbl">Total Logged</div></div>
       <div class="table-wrap mt-16">
         <table>
-          <thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Logged By</th><th>Amount</th></tr></thead>
-          <tbody>${expenses.map(e => `<tr><td>${e.date}</td><td>${e.category}</td><td>${escapeHtml(e.description)}</td><td>${escapeHtml(e.loggedBy || "Admin")}${e.source === "sales_person" ? ` <span class="badge badge-neutral">Sales</span>` : ""}</td><td>${LFS.formatMoney(e.amount)}</td></tr>`).join("") || `<tr><td colspan="5" class="text-soft">No expenses logged.</td></tr>`}</tbody>
+          <thead><tr><th>Date</th><th>Time (IST)</th><th>Category</th><th>Description</th><th>Logged By</th><th>Amount</th></tr></thead>
+          <tbody>${expenses.map(e => `<tr><td>${e.date}</td><td>${LFS.formatIST(e.createdAt)}</td><td>${e.category}</td><td>${escapeHtml(e.description)}</td><td>${escapeHtml(e.loggedBy || "Admin")}${e.source === "sales_person" ? ` <span class="badge badge-neutral">Sales</span>` : ""}</td><td>${LFS.formatMoney(e.amount)}</td></tr>`).join("") || `<tr><td colspan="6" class="text-soft">No expenses logged.</td></tr>`}</tbody>
         </table>
       </div>
     </div>
@@ -827,24 +830,25 @@ function saveExpense(e) {
     description: document.getElementById("expDesc").value.trim(),
     amount: Number(document.getElementById("expAmount").value) || 0,
     date, month: date.slice(0, 7),
-    source: "admin", loggedBy: "Admin"
+    source: "admin", loggedBy: "Admin",
+    createdAt: LFS.nowISO()
   });
   LFS.set("lfs_expenses", expenses);
   toast("Expense saved");
   renderAdminModule();
 }
 function expenseLogRows() {
-  return LFS.get("lfs_expenses").slice().reverse().map(e => ({ date: e.date, category: e.category, description: e.description, loggedBy: e.loggedBy || "Admin", amount: LFS.formatMoney(e.amount) }));
+  return LFS.get("lfs_expenses").slice().reverse().map(e => ({ date: e.date, time: LFS.formatIST(e.createdAt), category: e.category, description: e.description, loggedBy: e.loggedBy || "Admin", amount: LFS.formatMoney(e.amount) }));
 }
 function printExpensesReport() {
   const total = LFS.get("lfs_expenses").reduce((sum, e) => sum + Number(e.amount || 0), 0);
   LFS.printReport("Store Expense Log", LFS.tableHtml(expenseLogRows(), [
-    { key: "date", label: "Date" }, { key: "category", label: "Category" }, { key: "description", label: "Description" }, { key: "loggedBy", label: "Logged By" }, { key: "amount", label: "Amount" }
+    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "category", label: "Category" }, { key: "description", label: "Description" }, { key: "loggedBy", label: "Logged By" }, { key: "amount", label: "Amount" }
   ]) + `<p style="margin-top:10px;font-weight:700;">Total: ${LFS.formatMoney(total)}</p>`);
 }
 function downloadExpensesPDF() {
   LFS.downloadPDF("Store Expense Log", expenseLogRows(), [
-    { key: "date", label: "Date" }, { key: "category", label: "Category" }, { key: "description", label: "Description" }, { key: "loggedBy", label: "Logged By" }, { key: "amount", label: "Amount" }
+    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "category", label: "Category" }, { key: "description", label: "Description" }, { key: "loggedBy", label: "Logged By" }, { key: "amount", label: "Amount" }
   ]);
 }
 function renderUpcomingExpenses() {
@@ -903,6 +907,75 @@ function downloadUpcomingPDF() {
   LFS.downloadPDF(`Upcoming Expenses - ${thisMonth}`, upcomingRows(), [
     { key: "category", label: "Category" }, { key: "description", label: "Description" }, { key: "amount", label: "Amount" }
   ]);
+}
+
+/* ---------- Past Expenses Trend: pick a month for a breakdown, or a year for a 12-month bar graph ---------- */
+let EXPENSE_TREND_VIEW = "month"; // "month" | "year"
+let EXPENSE_TREND_MONTH = currentMonthStr(0);
+let EXPENSE_TREND_YEAR = new Date().getFullYear();
+
+function renderExpenseTrend() {
+  const allExpenses = LFS.get("lfs_expenses");
+  const years = new Set([new Date().getFullYear()]);
+  allExpenses.forEach(e => { if (e.date) years.add(Number(e.date.slice(0, 4))); });
+  const yearOptions = Array.from(years).sort((a, b) => b - a).map(y => `<option ${y === EXPENSE_TREND_YEAR ? "selected" : ""}>${y}</option>`).join("");
+
+  return `
+    <div class="card">
+      <div class="flex-between" style="flex-wrap:wrap;gap:10px;">
+        <h2 style="margin:0;">Past Expenses Trend</h2>
+        <div class="flex gap-8">
+          <button class="btn ${EXPENSE_TREND_VIEW === "month" ? "btn-primary" : "btn-outline"} btn-sm" onclick="EXPENSE_TREND_VIEW='month';renderAdminModule();">By Month</button>
+          <button class="btn ${EXPENSE_TREND_VIEW === "year" ? "btn-primary" : "btn-outline"} btn-sm" onclick="EXPENSE_TREND_VIEW='year';renderAdminModule();">By Year</button>
+        </div>
+      </div>
+      ${EXPENSE_TREND_VIEW === "month" ? `
+        <div class="field mt-16" style="max-width:220px;">
+          <label>Select Month</label>
+          <input type="month" id="trendMonthPicker" value="${EXPENSE_TREND_MONTH}" onchange="EXPENSE_TREND_MONTH=this.value;renderAdminModule();">
+        </div>
+        <div id="trendMonthResult"></div>
+      ` : `
+        <div class="field mt-16" style="max-width:160px;">
+          <label>Select Year</label>
+          <select id="trendYearPicker" onchange="EXPENSE_TREND_YEAR=Number(this.value);renderAdminModule();">${yearOptions}</select>
+        </div>
+        <div class="chart-box mt-16"><h4>Expenses by Month - ${EXPENSE_TREND_YEAR}</h4><canvas id="chartExpenseYear"></canvas></div>
+      `}
+    </div>
+    ${EXPENSE_TREND_VIEW === "month" ? renderExpenseMonthBreakdown() : ""}
+  `;
+}
+function renderExpenseMonthBreakdown() {
+  const rows = LFS.get("lfs_expenses").filter(e => e.month === EXPENSE_TREND_MONTH).slice().reverse();
+  const total = rows.reduce((s, e) => s + Number(e.amount || 0), 0);
+  return `
+    <div class="card">
+      <div class="flex-between"><h3 style="margin:0;">Expenses for ${EXPENSE_TREND_MONTH}</h3>
+        <div class="stat-box" style="padding:8px 16px;"><div class="num" style="font-size:1.2rem;">${LFS.formatMoney(total)}</div><div class="lbl">Total</div></div>
+      </div>
+      <div class="table-wrap mt-16">
+        <table>
+          <thead><tr><th>Date</th><th>Time (IST)</th><th>Category</th><th>Description</th><th>Logged By</th><th>Amount</th></tr></thead>
+          <tbody>${rows.map(e => `<tr><td>${e.date}</td><td>${LFS.formatIST(e.createdAt)}</td><td>${e.category}</td><td>${escapeHtml(e.description)}</td><td>${escapeHtml(e.loggedBy || "Admin")}</td><td>${LFS.formatMoney(e.amount)}</td></tr>`).join("") || `<tr><td colspan="6" class="text-soft">No expenses logged for this month.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+function initExpenseTrendChart() {
+  if (!window.Chart || EXPENSE_TREND_VIEW !== "year") return;
+  const monthly = Array(12).fill(0);
+  LFS.get("lfs_expenses").forEach(e => {
+    if (!e.date) return;
+    const d = new Date(e.date);
+    if (d.getFullYear() === EXPENSE_TREND_YEAR) monthly[d.getMonth()] += Number(e.amount || 0);
+  });
+  renderOrUpdateChart("chartExpenseYear", {
+    type: "bar",
+    data: { labels: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], datasets: [{ label: "Expenses (₹)", data: monthly, backgroundColor: "#B4483A" }] },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+  });
 }
 
 /* ============================================================
@@ -999,8 +1072,8 @@ function renderSalesReportModule() {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Date</th><th>Item</th><th>Qty</th><th>Customer</th><th>Employee</th><th>Payment</th><th>Total</th></tr></thead>
-          <tbody>${sales.slice().reverse().slice(0, 50).map(s => `<tr><td>${s.date}</td><td>${escapeHtml(s.itemName)}</td><td>${s.quantity}</td><td>${escapeHtml(s.customerName || "Walk-in")}</td><td>${escapeHtml(s.soldBy || "-")}</td><td>${s.paymentMode || "-"}</td><td>${LFS.formatMoney(s.total)}</td></tr>`).join("") || `<tr><td colspan="7" class="text-soft">No sales yet.</td></tr>`}</tbody>
+          <thead><tr><th>Date</th><th>Time (IST)</th><th>Item</th><th>Qty</th><th>Customer</th><th>Employee</th><th>Payment</th><th>Total</th></tr></thead>
+          <tbody>${sales.slice().reverse().slice(0, 50).map(s => `<tr><td>${s.date}</td><td>${LFS.formatIST(s.createdAt)}</td><td>${escapeHtml(s.itemName)}</td><td>${s.quantity}</td><td>${escapeHtml(s.customerName || "Walk-in")}</td><td>${escapeHtml(s.soldBy || "-")}</td><td>${s.paymentMode || "-"}</td><td>${LFS.formatMoney(s.total)}</td></tr>`).join("") || `<tr><td colspan="8" class="text-soft">No sales yet.</td></tr>`}</tbody>
         </table>
       </div>
     </div>
@@ -1014,9 +1087,10 @@ function renderSalesReportModule() {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Date</th><th>Item</th><th>Customer</th><th>Employee</th><th>Status</th><th>Total</th><th>Balance</th></tr></thead>
-          <tbody>${rentals.slice().reverse().slice(0, 50).map(r => `<tr><td>${r.rentalDate}</td><td>${escapeHtml(r.itemName)}</td><td>${escapeHtml(r.customerName)}</td><td>${escapeHtml(r.handledBy || "-")}</td><td>${r.status}</td><td>${LFS.formatMoney(r.total)}</td><td>${LFS.formatMoney(r.balance)}</td></tr>`).join("") || `<tr><td colspan="7" class="text-soft">No rentals yet.</td></tr>`}</tbody>
+          <thead><tr><th>Date</th><th>Time (IST)</th><th>Item</th><th>Customer</th><th>Employee</th><th>Status</th><th>Total</th><th>Balance</th></tr></thead>
+          <tbody>${rentals.slice().reverse().slice(0, 50).map(r => `<tr><td>${r.rentalDate}</td><td>${LFS.formatIST(r.createdAt)}</td><td>${escapeHtml(r.itemName)}</td><td>${escapeHtml(r.customerName)}</td><td>${escapeHtml(r.handledBy || "-")}</td><td>${r.status}</td><td>${LFS.formatMoney(r.total)}</td><td>${LFS.formatMoney(r.balance)}</td></tr>`).join("") || `<tr><td colspan="8" class="text-soft">No rentals yet.</td></tr>`}</tbody>
         </table>
+
       </div>
     </div>
   `;
@@ -1104,29 +1178,29 @@ function downloadOverviewPDF() {
   LFS.downloadPDF("Overall Sales Overview", overviewRows(), [{ key: "metric", label: "Metric" }, { key: "value", label: "Value" }]);
 }
 function dailySalesRows() {
-  return LFS.get("lfs_sales").slice().reverse().map(s => ({ date: s.date, item: s.itemName, qty: s.quantity, customer: s.customerName || "Walk-in", employee: s.soldBy || "-", payment: s.paymentMode || "-", total: LFS.formatMoney(s.total) }));
+  return LFS.get("lfs_sales").slice().reverse().map(s => ({ date: s.date, time: LFS.formatIST(s.createdAt), item: s.itemName, qty: s.quantity, customer: s.customerName || "Walk-in", employee: s.soldBy || "-", payment: s.paymentMode || "-", total: LFS.formatMoney(s.total) }));
 }
 function printDailySalesReport() {
   LFS.printReport("Daily Sales Report", LFS.tableHtml(dailySalesRows(), [
-    { key: "date", label: "Date" }, { key: "item", label: "Item" }, { key: "qty", label: "Qty" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "payment", label: "Payment" }, { key: "total", label: "Total" }
+    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "qty", label: "Qty" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "payment", label: "Payment" }, { key: "total", label: "Total" }
   ]));
 }
 function downloadDailySalesPDF() {
   LFS.downloadPDF("Daily Sales Report", dailySalesRows(), [
-    { key: "date", label: "Date" }, { key: "item", label: "Item" }, { key: "qty", label: "Qty" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "payment", label: "Payment" }, { key: "total", label: "Total" }
+    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "qty", label: "Qty" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "payment", label: "Payment" }, { key: "total", label: "Total" }
   ]);
 }
 function rentalsRows() {
-  return LFS.get("lfs_rentals").slice().reverse().map(r => ({ date: r.rentalDate, item: r.itemName, customer: r.customerName, employee: r.handledBy || "-", status: r.status, total: LFS.formatMoney(r.total), balance: LFS.formatMoney(r.balance) }));
+  return LFS.get("lfs_rentals").slice().reverse().map(r => ({ date: r.rentalDate, time: LFS.formatIST(r.createdAt), item: r.itemName, customer: r.customerName, employee: r.handledBy || "-", status: r.status, total: LFS.formatMoney(r.total), balance: LFS.formatMoney(r.balance) }));
 }
 function printRentalsReport() {
   LFS.printReport("Rentals Report", LFS.tableHtml(rentalsRows(), [
-    { key: "date", label: "Date" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "status", label: "Status" }, { key: "total", label: "Total" }, { key: "balance", label: "Balance" }
+    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "status", label: "Status" }, { key: "total", label: "Total" }, { key: "balance", label: "Balance" }
   ]));
 }
 function downloadRentalsPDF() {
   LFS.downloadPDF("Rentals Report", rentalsRows(), [
-    { key: "date", label: "Date" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "status", label: "Status" }, { key: "total", label: "Total" }, { key: "balance", label: "Balance" }
+    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "status", label: "Status" }, { key: "total", label: "Total" }, { key: "balance", label: "Balance" }
   ]);
 }
 
@@ -1136,6 +1210,9 @@ function downloadRentalsPDF() {
 function renderCustomersModule() {
   const customers = LFS.get("lfs_customers");
   const editing = EDIT_CUSTOMER_ID ? customers.find(c => c.id === EDIT_CUSTOMER_ID) : null;
+  const years = new Set([new Date().getFullYear()]);
+  customers.forEach(c => { if (c.createdAt) years.add(new Date(c.createdAt).getFullYear()); });
+  const yearOptions = Array.from(years).sort((a, b) => b - a).map(y => `<option ${y === CUSTOMER_CHART_YEAR ? "selected" : ""}>${y}</option>`).join("");
   return `
     <div class="card">
       <h2>${editing ? "Edit Customer" : "Add Customer"}</h2>
@@ -1149,6 +1226,7 @@ function renderCustomersModule() {
           <div class="field"><label>Address</label><input type="text" id="cusAddress" value="${editing ? escapeHtml(editing.address || "") : ""}"></div>
           <div class="field"><label>Region</label><select id="cusRegion">${LFS_REGIONS.map(r => `<option ${editing && editing.region === r ? "selected" : ""}>${r}</option>`).join("")}</select></div>
         </div>
+        <div class="field"><label>How did they hear about us?</label><select id="cusHowHeard">${LFS.REFERRAL_SOURCES.map(r => `<option ${editing && editing.howHeard === r ? "selected" : ""}>${r}</option>`).join("")}</select></div>
         <div class="grid cols-3">
           <div class="field"><label>Loyalty Points</label><input type="number" id="cusPoints" value="${editing ? editing.loyaltyPoints || 0 : 0}"></div>
           <div class="field"><label><input type="checkbox" id="cusRepeat" ${editing && editing.repeatCustomer ? "checked" : ""} style="width:auto;display:inline-block;margin-right:6px;">Repeat customer</label></div>
@@ -1161,6 +1239,14 @@ function renderCustomersModule() {
         </div>
       </form>
     </div>
+
+    <div class="card">
+      <div class="flex-between"><h3 style="margin:0;">New Customers Over Time</h3>
+        <select id="custYearPicker" style="width:110px;" onchange="CUSTOMER_CHART_YEAR=Number(this.value);initCustomerChart();">${yearOptions}</select>
+      </div>
+      <div class="chart-box mt-16"><canvas id="chartNewCustomers"></canvas></div>
+    </div>
+
     <div class="card">
       <div class="flex-between"><h2 style="margin:0;">Customers (${customers.length})</h2>
         <div class="flex gap-8">
@@ -1171,22 +1257,40 @@ function renderCustomersModule() {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Name</th><th>Phone</th><th>Region</th><th>Points</th><th>Repeat</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Phone</th><th>Region</th><th>Points</th><th>Repeat</th><th>Review</th><th>Heard Via</th><th></th></tr></thead>
           <tbody>
             ${customers.map(c => `
               <tr>
                 <td>${escapeHtml(c.name)}</td><td class="mono">${c.phone}</td><td>${c.region || "-"}</td><td>${c.loyaltyPoints || 0}</td>
                 <td>${c.repeatCustomer ? "Yes" : "No"}</td>
+                <td>${c.reviewGiven ? `<span class="badge badge-available">Yes - ${escapeHtml(c.reviewPlatform || "?")}</span>` : `<span class="badge badge-neutral">No</span>`}</td>
+                <td>${escapeHtml(c.howHeard || "-")}</td>
                 <td class="flex gap-8">
                   <button class="btn btn-outline btn-sm" onclick="EDIT_CUSTOMER_ID='${c.id}';renderAdminModule();">Edit</button>
                   <button class="btn btn-danger btn-sm" onclick="deleteCustomer('${c.id}')">Delete</button>
                 </td>
-              </tr>`).join("") || `<tr><td colspan="6" class="text-soft">No customers yet.</td></tr>`}
+              </tr>`).join("") || `<tr><td colspan="8" class="text-soft">No customers yet.</td></tr>`}
           </tbody>
         </table>
       </div>
     </div>
   `;
+}
+let CUSTOMER_CHART_YEAR = new Date().getFullYear();
+function initCustomerChart() {
+  if (!window.Chart) return;
+  const customers = LFS.get("lfs_customers");
+  const monthly = Array(12).fill(0);
+  customers.forEach(c => {
+    if (!c.createdAt) return;
+    const d = new Date(c.createdAt);
+    if (d.getFullYear() === CUSTOMER_CHART_YEAR) monthly[d.getMonth()]++;
+  });
+  renderOrUpdateChart("chartNewCustomers", {
+    type: "bar",
+    data: { labels: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], datasets: [{ label: "New Customers", data: monthly, backgroundColor: "#7A1E3D" }] },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+  });
 }
 function saveCustomer(e) {
   e.preventDefault();
@@ -1194,17 +1298,20 @@ function saveCustomer(e) {
   if (!LFS.isValidPhone(phone)) { toast("Enter a valid 10-digit phone number"); return; }
   const customers = LFS.get("lfs_customers");
   const id = document.getElementById("cusId").value;
+  const existing = id ? customers.find(c => c.id === id) : null;
   const data = {
     id: id || LFS.uid("cus"),
     name: document.getElementById("cusName").value.trim(),
     phone,
     address: document.getElementById("cusAddress").value.trim(),
     region: document.getElementById("cusRegion").value,
+    howHeard: document.getElementById("cusHowHeard").value,
     loyaltyPoints: Number(document.getElementById("cusPoints").value) || 0,
     repeatCustomer: document.getElementById("cusRepeat").checked,
     reviewGiven: document.getElementById("cusReview").checked,
     reviewPlatform: document.getElementById("cusReviewPlatform").value,
-    notes: id ? (customers.find(c => c.id === id) || {}).notes || "" : ""
+    notes: existing ? existing.notes || "" : "",
+    createdAt: existing ? existing.createdAt || LFS.nowISO() : LFS.nowISO()
   };
   if (id) customers[customers.findIndex(c => c.id === id)] = data; else customers.push(data);
   LFS.set("lfs_customers", customers);
@@ -1213,16 +1320,19 @@ function saveCustomer(e) {
   renderAdminModule();
 }
 function customerRows() {
-  return LFS.get("lfs_customers").map(c => ({ name: c.name, phone: c.phone, region: c.region || "-", points: c.loyaltyPoints || 0, repeat: c.repeatCustomer ? "Yes" : "No" }));
+  return LFS.get("lfs_customers").map(c => ({
+    name: c.name, phone: c.phone, region: c.region || "-", points: c.loyaltyPoints || 0, repeat: c.repeatCustomer ? "Yes" : "No",
+    review: c.reviewGiven ? `Yes - ${c.reviewPlatform || "?"}` : "No", heardVia: c.howHeard || "-"
+  }));
 }
 function printCustomersReport() {
   LFS.printReport("Customer Directory Report", LFS.tableHtml(customerRows(), [
-    { key: "name", label: "Name" }, { key: "phone", label: "Phone" }, { key: "region", label: "Region" }, { key: "points", label: "Points" }, { key: "repeat", label: "Repeat" }
+    { key: "name", label: "Name" }, { key: "phone", label: "Phone" }, { key: "region", label: "Region" }, { key: "points", label: "Points" }, { key: "repeat", label: "Repeat" }, { key: "review", label: "Review" }, { key: "heardVia", label: "Heard Via" }
   ]));
 }
 function downloadCustomersPDF() {
   LFS.downloadPDF("Customer Directory Report", customerRows(), [
-    { key: "name", label: "Name" }, { key: "phone", label: "Phone" }, { key: "region", label: "Region" }, { key: "points", label: "Points" }, { key: "repeat", label: "Repeat" }
+    { key: "name", label: "Name" }, { key: "phone", label: "Phone" }, { key: "region", label: "Region" }, { key: "points", label: "Points" }, { key: "repeat", label: "Repeat" }, { key: "review", label: "Review" }, { key: "heardVia", label: "Heard Via" }
   ]);
 }
 function deleteCustomer(id) {
@@ -1233,7 +1343,8 @@ function deleteCustomer(id) {
 }
 
 /* ============================================================
-   LOYALTY, DISCOUNTS, REDEMPTION & FLASH SALE
+   LOYALTY, DISCOUNTS & POINTS REDEMPTION
+   (Flash sales are now handled by the Promotions module)
    ============================================================ */
 function renderLoyaltyModule() {
   const l = LFS.get("lfs_loyalty");
@@ -1241,6 +1352,7 @@ function renderLoyaltyModule() {
   return `
     <div class="card">
       <h2>Loyalty Points &amp; Discount Rules</h2>
+      <p class="text-soft">Looking for seasonal sales or celebration discounts? Those now live in the <strong>Promotions</strong> tab, where you can also scope them to specific categories.</p>
       <form id="loyaltyForm">
         <div class="grid cols-2">
           <div class="field"><label>Points earned per ₹100 spent</label><input type="number" id="loyPoints" min="0" value="${l.pointsPer100Rupees}"></div>
@@ -1254,14 +1366,6 @@ function renderLoyaltyModule() {
         <div class="grid cols-2">
           <div class="field"><label>Minimum points required to redeem</label><input type="number" id="loyRedeemThreshold" min="1" value="${r.thresholdPoints}"></div>
           <div class="field"><label>Value per point (₹)</label><input type="number" id="loyRedeemValue" min="0" step="0.1" value="${r.valuePerPoint}"></div>
-        </div>
-
-        <h3 class="mt-16">Flash Sale</h3>
-        <div class="field"><label><input type="checkbox" id="loyFlashEnabled" ${l.flashSale && l.flashSale.enabled ? "checked" : ""} style="width:auto;display:inline-block;margin-right:6px;">Enable flash sale</label></div>
-        <div class="grid cols-3">
-          <div class="field"><label>Discount (%)</label><input type="number" id="loyFlashPct" min="0" max="100" value="${l.flashSale ? l.flashSale.discountPercent : 0}"></div>
-          <div class="field"><label>From Date</label><input type="date" id="loyFlashFrom" value="${l.flashSale ? l.flashSale.fromDate : ""}"></div>
-          <div class="field"><label>To Date</label><input type="date" id="loyFlashTo" value="${l.flashSale ? l.flashSale.toDate : ""}"></div>
         </div>
         <button class="btn btn-primary" type="submit">Save Loyalty Settings</button>
       </form>
@@ -1278,13 +1382,6 @@ function saveLoyalty(e) {
       enabled: document.getElementById("loyRedeemEnabled").checked,
       thresholdPoints: Number(document.getElementById("loyRedeemThreshold").value) || 50,
       valuePerPoint: Number(document.getElementById("loyRedeemValue").value) || 1
-    },
-    flashSale: {
-      enabled: document.getElementById("loyFlashEnabled").checked,
-      discountPercent: Number(document.getElementById("loyFlashPct").value) || 0,
-      fromDate: document.getElementById("loyFlashFrom").value,
-      toDate: document.getElementById("loyFlashTo").value,
-      appliesTo: "all"
     }
   };
   LFS.set("lfs_loyalty", data);
@@ -1294,20 +1391,27 @@ function saveLoyalty(e) {
 
 /* ============================================================
    PROMOTIONS / CELEBRATIONS
+   Only ONE promotion may be enabled at any time (enforced below), and each
+   promotion can be scoped to Daily Sale and/or Rental, and to specific
+   item categories - similar to how category-scoped "automatic discounts"
+   work in Shopify/Square/WooCommerce coupon rules.
    ============================================================ */
 function renderPromotionsModule() {
   const promos = LFS.get("lfs_promotions");
   const editing = EDIT_PROMO_ID ? promos.find(p => p.id === EDIT_PROMO_ID) : null;
+  const activeOne = promos.find(p => p.enabled);
   return `
     <div class="card">
       <h2>Promotions &amp; Celebration Discounts</h2>
-      <p class="text-soft">Default public holidays and celebrations are listed below, all switched off until you enable them. You can also add your own custom promotions with a discount percentage. These automatically show up as available discounts in the Daily Sales and Rental POS screens on the matching date.</p>
+      <p class="text-soft">Default public holidays and celebrations are listed below, all switched off until you enable them. You can also add your own custom promotions, and scope each one to Daily Sale and/or Rental items in specific categories. These automatically show up as a selectable discount in the Daily Sales and Rental POS screens on the matching date.</p>
+      <p class="text-soft"><strong>Only one promotion can be active at a time.</strong> Enabling one automatically requires disabling any other first.</p>
+      ${activeOne ? `<div class="success-note">Currently active: <strong>${escapeHtml(activeOne.name)}</strong> (${activeOne.discountPercent}% off)</div>` : ""}
       <div class="card" style="background:var(--ivory-dim);box-shadow:none;">
         ${promos.map(p => `
           <div class="promo-row">
             <div>
               <div class="promo-name">${escapeHtml(p.name)} ${p.isDefault ? '<span class="badge badge-neutral">Default</span>' : '<span class="badge badge-neutral">Custom</span>'}</div>
-              <div class="promo-when">${p.recurring ? `Every ${monthName(p.month)} ${p.day}` : `${p.fromDate || "?"} to ${p.toDate || "?"}`} &middot; ${p.discountPercent}% off</div>
+              <div class="promo-when">${p.recurring ? `Every ${monthName(p.month)} ${p.day}` : `${p.fromDate || "?"} to ${p.toDate || "?"}`} &middot; ${p.discountPercent}% off &middot; ${describePromoScope(p)}</div>
             </div>
             <div class="flex gap-8">
               <label class="flex gap-8" style="font-size:.8rem;"><input type="checkbox" ${p.enabled ? "checked" : ""} onchange="togglePromotion('${p.id}', this.checked)"> Enabled</label>
@@ -1340,7 +1444,19 @@ function renderPromotionsModule() {
           <div class="field"><label>From Date</label><input type="date" id="promoFrom" value="${editing ? editing.fromDate || "" : ""}"></div>
           <div class="field"><label>To Date</label><input type="date" id="promoTo" value="${editing ? editing.toDate || "" : ""}"></div>
         </div>
-        <div class="field"><label><input type="checkbox" id="promoEnabled" ${editing && editing.enabled ? "checked" : ""} style="width:auto;display:inline-block;margin-right:6px;">Enabled</label></div>
+        <p class="text-soft mt-8">Applies to which items? Leave both sections unchecked to apply to everything.</p>
+        <div class="grid cols-2">
+          <div class="field">
+            <label>Module</label>
+            <label class="flex gap-8" style="font-weight:400;"><input type="checkbox" id="promoModDaily" value="dailySale" ${!editing || (editing.appliesToModules || []).includes("dailySale") ? "checked" : ""} style="width:auto;"> Daily Sale (Fancy Items)</label>
+            <label class="flex gap-8" style="font-weight:400;"><input type="checkbox" id="promoModRental" value="rental" ${!editing || (editing.appliesToModules || []).includes("rental") ? "checked" : ""} style="width:auto;"> Rental Jewellery</label>
+          </div>
+          <div class="field">
+            <label>Categories (leave all unchecked for "All categories")</label>
+            ${LFS_CATEGORIES.map(c => `<label class="flex gap-8" style="font-weight:400;"><input type="checkbox" class="promoCat" value="${c}" ${editing && (editing.appliesToCategories || []).includes(c) ? "checked" : ""} style="width:auto;"> ${c}</label>`).join("")}
+          </div>
+        </div>
+        <div class="field mt-8"><label><input type="checkbox" id="promoEnabled" ${editing && editing.enabled ? "checked" : ""} style="width:auto;display:inline-block;margin-right:6px;">Enabled</label></div>
         <div class="flex gap-8">
           <button class="btn btn-primary" type="submit">${editing ? "Save Changes" : "Add Promotion"}</button>
           ${editing ? `<button type="button" class="btn btn-outline" onclick="EDIT_PROMO_ID=null;renderAdminModule();">Cancel</button>` : ""}
@@ -1348,6 +1464,11 @@ function renderPromotionsModule() {
       </form>
     </div>
   `;
+}
+function describePromoScope(p) {
+  const mods = (p.appliesToModules && p.appliesToModules.length) ? p.appliesToModules.map(m => m === "dailySale" ? "Daily Sale" : "Rental").join(" + ") : "All modules";
+  const cats = (p.appliesToCategories && p.appliesToCategories.length) ? p.appliesToCategories.join(", ") : "All categories";
+  return `${mods} &middot; ${cats}`;
 }
 function monthName(m) { return ["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][Number(m)] || ""; }
 function togglePromoTypeFields() {
@@ -1358,7 +1479,15 @@ function togglePromoTypeFields() {
 function togglePromotion(id, enabled) {
   const promos = LFS.get("lfs_promotions");
   const p = promos.find(x => x.id === id);
-  if (p) { p.enabled = enabled; LFS.set("lfs_promotions", promos); toast(enabled ? `${p.name} enabled` : `${p.name} disabled`); }
+  if (!p) return;
+  if (enabled && LFS.anyOtherPromotionEnabled(id)) {
+    toast("Only one promotion can be active at a time. Disable the current one first.");
+    renderAdminModule();
+    return;
+  }
+  p.enabled = enabled;
+  LFS.set("lfs_promotions", promos);
+  toast(enabled ? `${p.name} enabled` : `${p.name} disabled`);
 }
 function deletePromotion(id) {
   if (!confirm("Delete this promotion?")) return;
@@ -1371,6 +1500,15 @@ function savePromotion(e) {
   const promos = LFS.get("lfs_promotions");
   const id = document.getElementById("promoId").value;
   const isRecurring = document.getElementById("promoType").value === "recurring";
+  const enabled = document.getElementById("promoEnabled").checked;
+  if (enabled && LFS.anyOtherPromotionEnabled(id)) {
+    toast("Only one promotion can be active at a time. Disable the current one first, then enable this one.");
+    return;
+  }
+  const appliesToModules = [];
+  if (document.getElementById("promoModDaily").checked) appliesToModules.push("dailySale");
+  if (document.getElementById("promoModRental").checked) appliesToModules.push("rental");
+  const appliesToCategories = Array.from(document.querySelectorAll(".promoCat:checked")).map(c => c.value);
   const data = {
     id: id || LFS.uid("promo"),
     name: document.getElementById("promoName").value.trim(),
@@ -1380,7 +1518,8 @@ function savePromotion(e) {
     day: isRecurring ? Number(document.getElementById("promoDay").value) : null,
     fromDate: !isRecurring ? document.getElementById("promoFrom").value : "",
     toDate: !isRecurring ? document.getElementById("promoTo").value : "",
-    enabled: document.getElementById("promoEnabled").checked,
+    appliesToModules, appliesToCategories,
+    enabled,
     isDefault: id ? (promos.find(p => p.id === id) || {}).isDefault || false : false
   };
   if (id) promos[promos.findIndex(p => p.id === id)] = data; else promos.push(data);

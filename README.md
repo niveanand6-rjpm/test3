@@ -1,5 +1,29 @@
 # Lakshmi Fancy Store - Store Management SPA
 
+## Latest updates (2026-08-12)
+
+- **Promotions** are now scoped to Daily Sale and/or Rental, and to specific
+  item categories (like Shopify/Square/WooCommerce "automatic discount"
+  rules scoped by collection/product type). **Only one promotion can be
+  enabled at a time** - enabling a second one is blocked until you disable
+  the first.
+- **Unified discount engine**: repeat-customer %, review discount, the
+  active promotion, and points redemption are now combined into a single
+  breakdown with one "Apply Discounts" button in both Daily Sales and the
+  Rental POS - no more separately clicking each one.
+- **Flash Sale removed** from Loyalty & Discounts (superseded by Promotions).
+- **Daily Sales "Others" item**: pick "Others (custom item)" to reveal a
+  description + unit price field for anything not in the catalog.
+- **IST date & time** now shown (and exported/printed) alongside the date on
+  Recent Sales, Active/History Rentals, Expenses, Customer Notes, and every
+  related report/PDF/CSV - so you can see exactly when a customer visited.
+- **Customers table** now shows review status + platform and "how did they
+  hear about us", plus a new-customers-by-month chart.
+- **Expenses** gets a third sub-tab, "Past Expenses Trend": pick a month for
+  a breakdown, or a year for a 12-month bar graph.
+
+## Overview
+
 A zero-build, static HTML/CSS/JS app for running daily sales, jewellery
 rentals, and back-office admin from a phone, tablet, or desktop. Runs free
 on GitHub Pages - no server, no framework, no build step. A few small CDN

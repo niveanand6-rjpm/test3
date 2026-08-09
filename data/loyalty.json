@@ -6,12 +6,5 @@
     "enabled": false,
     "thresholdPoints": 50,
     "valuePerPoint": 1
-  },
-  "flashSale": {
-    "enabled": false,
-    "discountPercent": 15,
-    "fromDate": "",
-    "toDate": "",
-    "appliesTo": "all"
   }
 }
