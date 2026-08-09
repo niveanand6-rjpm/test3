@@ -12,6 +12,9 @@
     "customerName": "Priya Ramesh",
     "soldBy": "Kalaivani M",
     "paymentMode": "Cash",
-    "createdAt": "2026-08-05T11:20:00.000+05:30"
+    "createdAt": "2026-08-05T11:20:00.000+05:30",
+    "pointsEarned": 17,
+    "pointsRedeemed": 0,
+    "redemptionValue": 0
   }
 ]

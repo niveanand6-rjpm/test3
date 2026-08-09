@@ -1138,8 +1138,8 @@ function renderSalesReportModule() {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Date</th><th>Time (IST)</th><th>Item</th><th>Qty</th><th>Customer</th><th>Employee</th><th>Payment</th><th>Total</th></tr></thead>
-          <tbody>${sales.slice().reverse().slice(0, 50).map(s => `<tr><td>${s.date}</td><td>${LFS.formatIST(s.createdAt)}</td><td>${escapeHtml(s.itemName)}</td><td>${s.quantity}</td><td>${escapeHtml(s.customerName || "Walk-in")}</td><td>${escapeHtml(s.soldBy || "-")}</td><td>${s.paymentMode || "-"}</td><td>${LFS.formatMoney(s.total)}</td></tr>`).join("") || `<tr><td colspan="8" class="text-soft">No sales yet.</td></tr>`}</tbody>
+          <thead><tr><th>Date</th><th>Time (IST)</th><th>Item</th><th>Qty</th><th>Customer</th><th>Employee</th><th>Payment</th><th>Discount</th><th>Pts Earned</th><th>Pts Redeemed</th><th>Total</th></tr></thead>
+          <tbody>${sales.slice().reverse().slice(0, 50).map(s => `<tr><td>${s.date}</td><td>${LFS.formatIST(s.createdAt)}</td><td>${escapeHtml(s.itemName)}</td><td>${s.quantity}</td><td>${escapeHtml(s.customerName || "Walk-in")}</td><td>${escapeHtml(s.soldBy || "-")}</td><td>${s.paymentMode || "-"}</td><td>${LFS.formatMoney(s.discount)}</td><td>${s.pointsEarned || 0}</td><td>${s.pointsRedeemed || 0}</td><td>${LFS.formatMoney(s.total)}</td></tr>`).join("") || `<tr><td colspan="11" class="text-soft">No sales yet.</td></tr>`}</tbody>
         </table>
       </div>
     </div>
@@ -1266,16 +1266,20 @@ function downloadOverviewPDF() {
   LFS.downloadPDF("Overall Sales Overview", overviewRows(), [{ key: "metric", label: "Metric" }, { key: "value", label: "Value" }]);
 }
 function dailySalesRows() {
-  return LFS.get("lfs_sales").slice().reverse().map(s => ({ date: s.date, time: LFS.formatIST(s.createdAt), item: s.itemName, qty: s.quantity, customer: s.customerName || "Walk-in", employee: s.soldBy || "-", payment: s.paymentMode || "-", total: LFS.formatMoney(s.total) }));
+  return LFS.get("lfs_sales").slice().reverse().map(s => ({
+    date: s.date, time: LFS.formatIST(s.createdAt), item: s.itemName, qty: s.quantity, customer: s.customerName || "Walk-in",
+    employee: s.soldBy || "-", payment: s.paymentMode || "-", discount: LFS.formatMoney(s.discount),
+    pointsEarned: s.pointsEarned || 0, pointsRedeemed: s.pointsRedeemed || 0, total: LFS.formatMoney(s.total)
+  }));
 }
 function printDailySalesReport() {
   LFS.printReport("Daily Sales Report", LFS.tableHtml(dailySalesRows(), [
-    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "qty", label: "Qty" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "payment", label: "Payment" }, { key: "total", label: "Total" }
+    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "qty", label: "Qty" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "payment", label: "Payment" }, { key: "discount", label: "Discount" }, { key: "pointsEarned", label: "Points Earned" }, { key: "pointsRedeemed", label: "Points Redeemed" }, { key: "total", label: "Total" }
   ]));
 }
 function downloadDailySalesPDF() {
   LFS.downloadPDF("Daily Sales Report", dailySalesRows(), [
-    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "qty", label: "Qty" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "payment", label: "Payment" }, { key: "total", label: "Total" }
+    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "qty", label: "Qty" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "payment", label: "Payment" }, { key: "discount", label: "Discount" }, { key: "pointsEarned", label: "Points Earned" }, { key: "pointsRedeemed", label: "Points Redeemed" }, { key: "total", label: "Total" }
   ]);
 }
 function rentalsRows() {
@@ -1513,10 +1517,10 @@ function renderPromotionsModule() {
       <h2>🎉 Promotions &amp; Celebration Discounts</h2>
       <p class="text-soft">Default public holidays and celebrations are listed below, all switched off until you enable them. You can also add your own custom promotions, and scope each one to Daily Sale and/or Rental items in specific categories. These automatically show up as a selectable discount in the Daily Sales and Rental POS screens on the matching date.</p>
       <p class="text-soft"><strong>Only one promotion can be active at a time.</strong> Enabling one automatically requires disabling any other first.</p>
-      ${activeOne ? `<div class="success-note">Currently active: <strong>${escapeHtml(activeOne.name)}</strong> (${activeOne.discountPercent}% off)</div>` : ""}
+      ${activeOne ? `<div class="promo-banner">🎉 Currently enabled: <strong>${escapeHtml(activeOne.name)}</strong> (${activeOne.discountPercent}% off, ${describePromoScope(activeOne)})${LFS.activePromotionToday() ? " - live today!" : " - will apply automatically once its date is reached."}</div>` : ""}
       <div class="card" style="background:var(--ivory-dim);box-shadow:none;">
         ${promos.map(p => `
-          <div class="promo-row">
+          <div class="promo-row ${p.enabled ? "active-promo" : ""}">
             <div>
               <div class="promo-name">${escapeHtml(p.name)} ${p.isDefault ? '<span class="badge badge-neutral">Default</span>' : '<span class="badge badge-neutral">Custom</span>'}</div>
               <div class="promo-when">${p.recurring ? `Every ${monthName(p.month)} ${p.day}` : `${p.fromDate || "?"} to ${p.toDate || "?"}`} &middot; ${p.discountPercent}% off &middot; ${describePromoScope(p)}</div>

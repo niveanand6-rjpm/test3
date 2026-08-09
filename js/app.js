@@ -116,18 +116,29 @@ function buildReceiptHtml(opts) {
     </div>
   `;
 }
-function printOffscreenReceipt(html) {
-  let holder = document.getElementById("offscreenReceiptHolder");
+function showReceiptModal(html) {
+  let holder = document.getElementById("receiptModalHolder");
   if (!holder) {
     holder = document.createElement("div");
-    holder.id = "offscreenReceiptHolder";
-    holder.style.position = "fixed";
-    holder.style.left = "-9999px";
-    holder.style.top = "0";
+    holder.id = "receiptModalHolder";
     document.body.appendChild(holder);
   }
-  holder.innerHTML = html;
-  setTimeout(() => window.print(), 60);
+  holder.innerHTML = `
+    <div class="modal-backdrop" onclick="if(event.target===this) closeReceiptModal()">
+      <div class="modal" style="max-width:380px;">
+        <button class="modal-close" onclick="closeReceiptModal()">&times;</button>
+        ${html}
+        <div class="text-center mt-16">
+          <button class="btn btn-gold" onclick="window.print()">Print</button>
+          <button class="btn btn-outline" onclick="closeReceiptModal()">Close</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+function closeReceiptModal() {
+  const holder = document.getElementById("receiptModalHolder");
+  if (holder) holder.innerHTML = "";
 }
 
 /* ============================================================
@@ -145,7 +156,7 @@ function renderDailySales() {
     <div class="card">
       <h2>🛍️ Daily Sales Entry</h2>
       <p class="text-soft">Quick sale of small fancy items from current stock.</p>
-      ${promo ? `<div class="success-note">🎉 ${escapeHtml(promo.name)} promotion is live today - ${promo.discountPercent}% off (${describePromoScopeShort(promo)}).</div>` : ""}
+      ${promo ? `<div class="promo-banner">🎉 ${escapeHtml(promo.name)} promotion is LIVE today - ${promo.discountPercent}% off (${describePromoScopeShort(promo)}). Let every customer know!</div>` : ""}
       <form id="dailySaleForm">
         <div class="grid cols-2">
           <div class="field">
@@ -205,13 +216,13 @@ function renderDailySales() {
       <div class="flex-between"><h3 style="margin:0;">🧾 Recent Sales</h3><button class="btn btn-outline btn-sm" onclick="printDailySalesReportSales()">Print All</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Date</th><th>Time (IST)</th><th>Item</th><th>Qty</th><th>Customer</th><th>Payment</th><th>Total</th><th></th></tr></thead>
+          <thead><tr><th>Date</th><th>Time (IST)</th><th>Item</th><th>Qty</th><th>Customer</th><th>Payment</th><th>Discount</th><th>Points Earned</th><th>Points Redeemed</th><th>Total</th><th></th></tr></thead>
           <tbody>
             ${sales.map(s => `<tr>
               <td>${s.date}</td><td>${LFS.formatIST(s.createdAt)}</td><td>${escapeHtml(s.itemName)}</td><td>${s.quantity}</td><td>${escapeHtml(s.customerName || "Walk-in")}</td>
-              <td>${paymentBadge(s.paymentMode)}</td><td>${LFS.formatMoney(s.total)}</td>
+              <td>${paymentBadge(s.paymentMode)}</td><td>${LFS.formatMoney(s.discount)}</td><td>${s.pointsEarned || 0}</td><td>${s.pointsRedeemed ? `${s.pointsRedeemed} (${LFS.formatMoney(s.redemptionValue)})` : "-"}</td><td>${LFS.formatMoney(s.total)}</td>
               <td><button class="btn btn-outline btn-sm" onclick="printSaleReceipt('${s.id}')">Print</button></td>
-            </tr>`).join("") || `<tr><td colspan="8" class="text-soft">No sales recorded yet.</td></tr>`}
+            </tr>`).join("") || `<tr><td colspan="11" class="text-soft">No sales recorded yet.</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -238,10 +249,11 @@ function paymentBadge(mode) {
 
 function printDailySalesReportSales() {
   const sales = LFS.get("lfs_sales").slice().reverse();
-  const rows = sales.map(s => ({ date: s.date, time: LFS.formatIST(s.createdAt), item: s.itemName, qty: s.quantity, customer: s.customerName || "Walk-in", payment: s.paymentMode || "-", total: LFS.formatMoney(s.total) }));
+  const rows = sales.map(s => ({ date: s.date, time: LFS.formatIST(s.createdAt), item: s.itemName, qty: s.quantity, customer: s.customerName || "Walk-in", payment: s.paymentMode || "-", discount: LFS.formatMoney(s.discount), pointsEarned: s.pointsEarned || 0, pointsRedeemed: s.pointsRedeemed || 0, total: LFS.formatMoney(s.total) }));
   LFS.printReport("Daily Sales Report", LFS.tableHtml(rows, [
     { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "qty", label: "Qty" },
-    { key: "customer", label: "Customer" }, { key: "payment", label: "Payment" }, { key: "total", label: "Total" }
+    { key: "customer", label: "Customer" }, { key: "payment", label: "Payment" }, { key: "discount", label: "Discount" },
+    { key: "pointsEarned", label: "Points Earned" }, { key: "pointsRedeemed", label: "Points Redeemed" }, { key: "total", label: "Total" }
   ]));
 }
 
@@ -263,7 +275,7 @@ function printSaleReceipt(saleId) {
     paymentMode: sale.paymentMode
   });
   // Employee name is intentionally omitted from the printed bill.
-  printOffscreenReceipt(html);
+  showReceiptModal(html);
 }
 
 function lookupDailyCustomer() {
@@ -383,6 +395,10 @@ function submitDailySale(e) {
   const discount = Number(document.getElementById("dsDiscount").value) || 0;
   const total = Math.max(0, unitPrice * qty - discount);
   const paymentMode = document.getElementById("dsPayment").value;
+  const loyalty = LFS.get("lfs_loyalty");
+  const pointsEarned = Math.floor(total * (loyalty.pointsPer100Rupees || 0) / 100);
+  const pointsRedeemed = (SALE_REDEEM_APPLIED && SALE_REDEEM_APPLIED.customerId) ? SALE_REDEEM_APPLIED.points : 0;
+  const redemptionValue = (SALE_REDEEM_APPLIED && SALE_REDEEM_APPLIED.customerId) ? SALE_REDEEM_APPLIED.value : 0;
 
   const sales = LFS.get("lfs_sales");
   sales.push({
@@ -399,7 +415,10 @@ function submitDailySale(e) {
     paymentMode,
     customerPhone: phone,
     customerName: document.getElementById("dsName").value.trim() || "Walk-in",
-    soldBy: employee
+    soldBy: employee,
+    pointsEarned,
+    pointsRedeemed,
+    redemptionValue
   });
   LFS.set("lfs_sales", sales);
 
@@ -412,7 +431,6 @@ function submitDailySale(e) {
   if (phone) {
     const customers = LFS.get("lfs_customers");
     let cust = customers.find(c => c.phone === phone);
-    const loyalty = LFS.get("lfs_loyalty");
     if (!cust) {
       cust = { id: LFS.uid("cus"), name: document.getElementById("dsName").value.trim() || "Walk-in", phone, address: "", region: "Rajapalayam", howHeard: "", loyaltyPoints: 0, repeatCustomer: false, reviewGiven: false, reviewPlatform: "", notes: "", createdAt: LFS.nowISO() };
       customers.push(cust);
@@ -422,7 +440,7 @@ function submitDailySale(e) {
     if (SALE_REDEEM_APPLIED && SALE_REDEEM_APPLIED.customerId === cust.id) {
       cust.loyaltyPoints = 0;
     }
-    cust.loyaltyPoints = (cust.loyaltyPoints || 0) + Math.floor(total * (loyalty.pointsPer100Rupees || 0) / 100);
+    cust.loyaltyPoints = (cust.loyaltyPoints || 0) + pointsEarned;
     LFS.set("lfs_customers", customers);
   }
   SALE_REDEEM_APPLIED = null;
@@ -456,7 +474,7 @@ function renderNewRental() {
   return `
     <div class="card">
       <h2>💳 New Rental - POS Terminal</h2>
-      ${promo ? `<div class="success-note">🎉 ${escapeHtml(promo.name)} promotion is live today - ${promo.discountPercent}% off (${describePromoScopeShort(promo)}).</div>` : ""}
+      ${promo ? `<div class="promo-banner">🎉 ${escapeHtml(promo.name)} promotion is LIVE today - ${promo.discountPercent}% off (${describePromoScopeShort(promo)}). Let every customer know!</div>` : ""}
       <form id="rentalForm">
         <div class="grid cols-2">
           <div class="field">
@@ -782,8 +800,7 @@ function submitRental(e) {
   document.getElementById("receiptSlot").innerHTML = `
     <div class="card">
       ${html}
-      <div class="text-center mt-16"><button class="btn btn-gold" onclick="printOffscreenReceipt(document.getElementById('printableRentalReceipt').innerHTML)">Print Receipt</button></div>
-      <div id="printableRentalReceipt" class="hidden">${html}</div>
+      <div class="text-center mt-16"><button class="btn btn-gold" onclick="window.print()">Print Receipt</button></div>
     </div>
   `;
 
@@ -862,7 +879,7 @@ function printRentalReceipt(rentalId) {
     totalValue: LFS.formatMoney(r.status === "active" ? r.balance : r.total),
     paymentMode: r.status === "active" ? r.advancePaymentMode : (r.settlementPaymentMode || r.advancePaymentMode)
   });
-  printOffscreenReceipt(html);
+  showReceiptModal(html);
 }
 
 function printRentalsReportSales() {

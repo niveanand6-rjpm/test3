@@ -1,6 +1,25 @@
 # Lakshmi Fancy Store - Store Management SPA
 
-## Latest updates (2026-08-13)
+## Latest updates (2026-08-14)
+
+- **Fixed per-sale/per-rental "Print" bug**: the individual receipt print
+  buttons (Recent Sales, Active Rentals, Rental History) relied on an
+  off-screen positioning trick to trigger `window.print()`, which is
+  unreliable across browsers/devices. Replaced with a visible print-preview
+  modal - click Print on any row, review the receipt, then hit Print inside
+  the modal. "Print All" (report view) was unaffected and still works the
+  same way.
+- **Recent Sales table** now shows Discount, Points Earned, and Points
+  Redeemed for every sale (also added to the Print All / Admin Sales
+  Report / PDF / CSV versions) so you can review redemption and discount
+  activity daily.
+- **Active promotions now flash**: in Admin > Promotions, the
+  enabled promotion is highlighted with a pulsing gold border in the list,
+  plus a "Currently enabled" banner at the top. The same flashing banner
+  shows on the Daily Sales and Rental POS screens so sales staff always
+  know to mention the current offer to customers.
+
+## Previous updates (2026-08-13)
 
 - **Referral program**: Rental POS now has a "Referred By" toggle - when yes,
   it captures the referrer's name, phone, and place, and computes a
