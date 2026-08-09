@@ -174,6 +174,14 @@ function renderDailySales() {
             <select id="dsPayment" required>${LFS.PAYMENT_MODES.map(m => `<option>${m}</option>`).join("")}</select>
           </div>
         </div>
+        <div class="field">
+          <label><input type="checkbox" id="dsBackdateToggle" onchange="toggleDailySaleBackdate()" style="width:auto;display:inline-block;margin-right:6px;">This sale happened on an earlier date</label>
+        </div>
+        <div id="dsBackdateFields" class="field hidden" style="max-width:220px;">
+          <label>Sale Date</label>
+          <input type="date" id="dsBackdateDate" max="${yesterdayISO()}">
+          <div class="error-msg hidden" id="dsBackdateErr">Please choose a past date (not today or later)</div>
+        </div>
         <div class="grid cols-2">
           <div class="field">
             <label>Customer Phone (optional)</label>
@@ -222,7 +230,7 @@ function renderDailySales() {
           <thead><tr><th>Date</th><th>Time (IST)</th><th>Item</th><th>Qty</th><th>Customer</th><th>Payment</th><th>Discount</th><th>Points Earned</th><th>Points Redeemed</th><th>Total</th><th></th></tr></thead>
           <tbody>
             ${sales.map(s => `<tr>
-              <td>${s.date}</td><td>${LFS.formatIST(s.createdAt)}</td><td>${escapeHtml(s.itemName)}</td><td>${s.quantity}</td><td>${escapeHtml(s.customerName || "Walk-in")}</td>
+              <td>${s.date}${s.backdated ? ` <span class="badge badge-neutral" title="Entered later for an earlier date">Backdated</span>` : ""}</td><td>${LFS.formatIST(s.createdAt)}</td><td>${escapeHtml(s.itemName)}</td><td>${s.quantity}</td><td>${escapeHtml(s.customerName || "Walk-in")}</td>
               <td>${paymentBadge(s.paymentMode)}</td><td>${LFS.formatMoney(s.discount)}</td><td>${s.pointsEarned || 0}</td><td>${s.pointsRedeemed ? `${s.pointsRedeemed} (${LFS.formatMoney(s.redemptionValue)})` : "-"}</td><td>${LFS.formatMoney(s.total)}</td>
               <td><button class="btn btn-outline btn-sm" onclick="printSaleReceipt('${s.id}')">Print</button></td>
             </tr>`).join("") || `<tr><td colspan="11" class="text-soft">No sales recorded yet.</td></tr>`}
@@ -243,6 +251,17 @@ function onDailyItemChange() {
   document.getElementById("dsOtherFields").classList.toggle("hidden", !isOther);
   updateDailySaleTotals();
   refreshDailyDiscountBlock();
+}
+
+function yesterdayISO() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+function toggleDailySaleBackdate() {
+  const on = document.getElementById("dsBackdateToggle").checked;
+  document.getElementById("dsBackdateFields").classList.toggle("hidden", !on);
+  if (!on) document.getElementById("dsBackdateErr").classList.add("hidden");
 }
 
 function paymentBadge(mode) {
@@ -377,6 +396,20 @@ function submitDailySale(e) {
   const phone = document.getElementById("dsPhone").value.trim();
   if (phone && !LFS.isValidPhone(phone)) { toast("Please enter a valid 10-digit phone number"); return; }
 
+  const isBackdated = document.getElementById("dsBackdateToggle").checked;
+  let saleDate = LFS.todayISO();
+  if (isBackdated) {
+    const chosen = document.getElementById("dsBackdateDate").value;
+    const errEl = document.getElementById("dsBackdateErr");
+    if (!chosen || chosen >= LFS.todayISO()) {
+      errEl.classList.remove("hidden");
+      toast("Please choose a past date for a backdated sale");
+      return;
+    }
+    errEl.classList.add("hidden");
+    saleDate = chosen;
+  }
+
   const itemVal = document.getElementById("dsItem").value;
   const inv = LFS.get("lfs_inventory");
   let item = null, itemName = "", unitPrice = 0, isOther = false;
@@ -406,7 +439,8 @@ function submitDailySale(e) {
   const sales = LFS.get("lfs_sales");
   sales.push({
     id: LFS.uid("sal"),
-    date: LFS.todayISO(),
+    date: saleDate,
+    backdated: isBackdated,
     createdAt: LFS.nowISO(),
     itemId: isOther ? null : item.id,
     itemName,
@@ -582,10 +616,11 @@ function renderNewRental() {
         </div>
         <div id="rnReferralFields" class="hidden">
           <div class="grid cols-3">
+            <div class="field"><label>Referrer Phone *</label><input type="tel" id="rnReferrerPhone" maxlength="10" oninput="lookupReferrerCustomer()" placeholder="10-digit mobile number"></div>
             <div class="field"><label>Referrer Name *</label><input type="text" id="rnReferrerName"></div>
-            <div class="field"><label>Referrer Phone *</label><input type="tel" id="rnReferrerPhone" maxlength="10"></div>
             <div class="field"><label>Referrer Place / Address</label><input type="text" id="rnReferrerPlace"></div>
           </div>
+          <div class="text-soft" id="rnReferrerLookupHint"></div>
           <div id="rnCommissionPreview" class="text-soft"></div>
         </div>
         <div class="flex gap-8 mt-8">
@@ -616,6 +651,20 @@ function onReferredToggle() {
   const isYes = document.getElementById("rnReferredYesNo").value === "yes";
   document.getElementById("rnReferralFields").classList.toggle("hidden", !isYes);
   updateCommissionPreview();
+}
+
+function lookupReferrerCustomer() {
+  const phone = document.getElementById("rnReferrerPhone").value.trim();
+  const hint = document.getElementById("rnReferrerLookupHint");
+  if (!LFS.isValidPhone(phone)) { if (hint) hint.textContent = ""; return; }
+  const cust = LFS.get("lfs_customers").find(c => c.phone === phone);
+  if (cust) {
+    document.getElementById("rnReferrerName").value = cust.name;
+    document.getElementById("rnReferrerPlace").value = cust.address || cust.region || "";
+    if (hint) hint.textContent = `Matched existing customer: ${cust.name}`;
+  } else if (hint) {
+    hint.textContent = "";
+  }
 }
 
 function computeCommission(item, basis) {
@@ -760,7 +809,10 @@ function submitRental(e) {
   const netRevenue = Math.max(0, rentalCharge - discount - (referred ? referralCommission : 0));
   const loyalty = LFS.get("lfs_loyalty");
   // Points are earned on the actual sale (rental charge), never on the refundable deposit.
-  cust.loyaltyPoints = (cust.loyaltyPoints || 0) + Math.floor(netRevenue * (loyalty.pointsPer100Rupees || 0) / 100);
+  const pointsEarned = Math.floor(netRevenue * (loyalty.pointsPer100Rupees || 0) / 100);
+  const pointsRedeemed = (RENTAL_REDEEM_APPLIED && RENTAL_REDEEM_APPLIED.customerId === cust.id) ? RENTAL_REDEEM_APPLIED.points : 0;
+  const redemptionValue = (RENTAL_REDEEM_APPLIED && RENTAL_REDEEM_APPLIED.customerId === cust.id) ? RENTAL_REDEEM_APPLIED.value : 0;
+  cust.loyaltyPoints = (cust.loyaltyPoints || 0) + pointsEarned;
   LFS.set("lfs_customers", customers);
   RENTAL_REDEEM_APPLIED = null;
 
@@ -783,7 +835,7 @@ function submitRental(e) {
     commissionType: referred ? (item.commissionType || "none") : "none",
     commissionValue: referred ? (item.commissionValue || 0) : 0,
     referralCommission,
-    rentalCharge, netRevenue
+    rentalCharge, netRevenue, pointsEarned, pointsRedeemed, redemptionValue
   };
   rentals.push(record);
   LFS.set("lfs_rentals", rentals);
@@ -924,6 +976,13 @@ function markReturned(rentalId) {
   renderTab();
 }
 
+function lookupRequestCustomer() {
+  const phone = document.getElementById("reqPhone").value.trim();
+  if (!LFS.isValidPhone(phone)) return;
+  const cust = LFS.get("lfs_customers").find(c => c.phone === phone);
+  if (cust) document.getElementById("reqName").value = cust.name;
+}
+
 function renderCustomerRequests() {
   const reqs = LFS.get("lfs_customer_requests").slice().reverse();
   return `
@@ -933,7 +992,7 @@ function renderCustomerRequests() {
         <div class="grid cols-2">
           <div class="field">
             <label>Customer Phone</label>
-            <input type="tel" id="reqPhone" maxlength="10">
+            <input type="tel" id="reqPhone" maxlength="10" oninput="lookupRequestCustomer()" placeholder="10-digit mobile number">
           </div>
           <div class="field">
             <label>Customer Name</label>

@@ -27,7 +27,12 @@
     "bg": "#FBF7F1",
     "header": "#7A1E3D",
     "footer": "#5A1530",
-    "accent": "#C9A24B"
+    "accent": "#C9A24B",
+    "cardBg": "#F2EAE0",
+    "text": "#2A2118",
+    "secondary": "#3E6259",
+    "fontPair": "classic",
+    "fontSize": "medium"
   },
   "salesDept": {
     "recentSummaryDays": 5,

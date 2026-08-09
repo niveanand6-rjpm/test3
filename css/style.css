@@ -23,12 +23,14 @@
   --radius:12px;
   --shadow:0 2px 10px rgba(42,33,24,.08);
   --shadow-lg:0 8px 28px rgba(42,33,24,.16);
+  --font-display:'Playfair Display', Georgia, serif;
+  --font-body:'Inter', system-ui, sans-serif;
 }
 
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;}
 body{
-  font-family:'Inter',system-ui,sans-serif;
+  font-family:var(--font-body);
   background:var(--ivory);
   color:var(--ink);
   -webkit-font-smoothing:antialiased;
@@ -36,7 +38,7 @@ body{
   padding-bottom:72px; /* room for mobile bottom nav */
 }
 h1,h2,h3,h4{
-  font-family:'Playfair Display',serif;
+  font-family:var(--font-display);
   color:var(--maroon);
   margin:0 0 .4em;
 }
@@ -63,7 +65,7 @@ code, .mono{font-family:'IBM Plex Mono',monospace;}
   background:var(--gold);
   color:var(--maroon-dark);
   display:flex;align-items:center;justify-content:center;
-  font-family:'Playfair Display',serif;font-weight:800;font-size:1.2rem;
+  font-family:var(--font-display);font-weight:800;font-size:1.2rem;
 }
 .store-header h1{color:var(--ivory);font-size:1.15rem;margin:0;}
 .store-header .sub{font-size:.72rem;color:var(--gold-light);opacity:.9;}
@@ -190,7 +192,7 @@ tr:hover td{background:var(--ivory-dim);}
 .catalog-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg);}
 .catalog-card .img-wrap{
   aspect-ratio:1/1;background:var(--ivory-dim);display:flex;align-items:center;justify-content:center;
-  font-family:'Playfair Display',serif;color:var(--gold);font-size:2rem;overflow:hidden;
+  font-family:var(--font-display);color:var(--gold);font-size:2rem;overflow:hidden;
 }
 .catalog-card .img-wrap img{width:100%;height:100%;object-fit:cover;}
 .catalog-card .info{padding:10px 12px;}
@@ -216,7 +218,7 @@ tr:hover td{background:var(--ivory-dim);}
   background:#fff;border-radius:16px;box-shadow:var(--shadow-lg);padding:36px 30px;max-width:360px;width:100%;text-align:center;
   border-top:4px solid var(--gold);
 }
-.login-card .emblem{font-family:'Playfair Display',serif;font-size:2.4rem;color:var(--maroon);margin-bottom:2px;}
+.login-card .emblem{font-family:var(--font-display);font-size:2.4rem;color:var(--maroon);margin-bottom:2px;}
 .login-card p.tag{color:var(--ink-soft);font-size:.85rem;margin-bottom:20px;}
 
 /* ---------- receipt (printable, perforated-tag style) ---------- */
@@ -230,7 +232,7 @@ tr:hover td{background:var(--ivory-dim);}
   font-size:.82rem;
   background:#fff;
 }
-.receipt h3{font-family:'Playfair Display',serif;text-align:center;margin-bottom:2px;}
+.receipt h3{font-family:var(--font-display);text-align:center;margin-bottom:2px;}
 .receipt .center{text-align:center;}
 .receipt hr{border:none;border-top:1px dashed var(--border);margin:10px 0;}
 .receipt .row{display:flex;justify-content:space-between;margin:3px 0;}
@@ -257,7 +259,7 @@ tr:hover td{background:var(--ivory-dim);}
   box-shadow:var(--shadow-lg);z-index:200;font-size:.88rem;
 }
 .stat-box{background:var(--ivory-dim);border-radius:10px;padding:14px;text-align:center;}
-.stat-box .num{font-family:'Playfair Display',serif;font-size:1.6rem;color:var(--maroon);font-weight:700;}
+.stat-box .num{font-family:var(--font-display);font-size:1.6rem;color:var(--maroon);font-weight:700;}
 .stat-box .lbl{font-size:.75rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.03em;}
 
 /* ---------- employee selector (header) ---------- */
@@ -330,7 +332,7 @@ details.help-panel code{background:#fff;padding:1px 5px;border-radius:4px;border
 }
 @media (min-width:641px){ .site-footer{padding-bottom:22px;} }
 .site-footer-inner{max-width:640px;margin:0 auto;}
-.footer-store{font-family:'Playfair Display',serif;font-size:1.05rem;margin-bottom:6px;}
+.footer-store{font-family:var(--font-display);font-size:1.05rem;margin-bottom:6px;}
 .footer-store .text-soft{color:var(--gold-light) !important;}
 .footer-contact{font-size:.82rem;color:var(--gold-light);margin-bottom:10px;}
 .footer-social{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:10px;}
@@ -346,9 +348,9 @@ details.help-panel code{background:#fff;padding:1px 5px;border-radius:4px;border
   0%,100%{ box-shadow:0 0 0 0 rgba(201,162,75,.6); }
   50%{ box-shadow:0 0 0 12px rgba(201,162,75,0); }
 }
-@keyframes promoShimmer{
-  0%{ background-position:0% 50%; }
-  100%{ background-position:300% 50%; }
+@keyframes promoGlow{
+  0%,100%{ opacity:1; }
+  50%{ opacity:.88; }
 }
 @keyframes promoBounce{
   0%,100%{ transform:translateY(0) rotate(0deg); }
@@ -356,27 +358,32 @@ details.help-panel code{background:#fff;padding:1px 5px;border-radius:4px;border
   75%{ transform:translateY(-3px) rotate(8deg); }
 }
 .promo-banner{
-  background:linear-gradient(120deg,var(--gold) 0%,var(--gold-light) 20%,#fff6df 40%,var(--gold-light) 60%,var(--gold) 80%,var(--gold-light) 100%);
-  background-size:300% 100%;
+  background:linear-gradient(120deg,var(--gold) 0%,var(--gold-light) 35%,#fff6df 50%,var(--gold-light) 65%,var(--gold) 100%);
   color:var(--maroon-dark);
   border-radius:12px;
   padding:13px 16px;
   margin-bottom:14px;
   font-weight:800;
   border:2px solid var(--gold);
-  animation:promoShimmer 3s linear infinite, promoPulse 1.6s ease-in-out infinite;
+  /* Only transform/opacity/box-shadow are animated - background-position
+     animations are unreliable on iOS Safari (WebKit throttles/skips
+     repainting non-GPU-accelerated properties, especially in Low Power
+     Mode), which was hiding this banner on iPad. */
+  animation:promoPulse 1.6s ease-in-out infinite, promoGlow 2.2s ease-in-out infinite;
+  -webkit-animation:promoPulse 1.6s ease-in-out infinite, promoGlow 2.2s ease-in-out infinite;
 }
 .promo-banner .promo-emoji{
   display:inline-block;
   animation:promoBounce 1s ease-in-out infinite;
+  -webkit-animation:promoBounce 1s ease-in-out infinite;
 }
 .promo-row.active-promo{
-  background:linear-gradient(120deg,var(--gold-light) 0%,#fff6df 25%,var(--gold-light) 50%,#F3E4B8 75%,var(--gold-light) 100%);
-  background-size:250% 100%;
+  background:linear-gradient(120deg,var(--gold-light) 0%,#fff6df 35%,var(--gold-light) 65%,#F3E4B8 100%);
   border:2px solid var(--gold);
   border-radius:10px;
   padding:10px 14px;
-  animation:promoShimmer 3s linear infinite, promoPulse 1.6s ease-in-out infinite;
+  animation:promoPulse 1.6s ease-in-out infinite;
+  -webkit-animation:promoPulse 1.6s ease-in-out infinite;
 }
 
 /* ---------- Go to Top button ---------- */

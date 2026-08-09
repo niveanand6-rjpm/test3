@@ -234,7 +234,7 @@ const LFS = (() => {
   /* ---------- PDF export (any table report) ----------
      Uses jsPDF + AutoTable, loaded via CDN in the HTML shell.
   */
-  function downloadPDF(title, rows, columns) {
+  function downloadPDF(title, rows, columns, summaryLines) {
     if (!window.jspdf || !window.jspdf.jsPDF) {
       alert("PDF library isn't available right now (check your internet connection). You can still use Print > Save as PDF.");
       return;
@@ -262,9 +262,18 @@ const LFS = (() => {
     doc.setTextColor(110);
     doc.text(forPdf("Generated on " + new Date().toLocaleString("en-IN")), 14, 40);
     doc.setTextColor(0);
+    let startY = 46;
+    if (summaryLines && summaryLines.length) {
+      doc.setFontSize(9);
+      doc.setTextColor(40);
+      let y = 47;
+      summaryLines.forEach(line => { doc.text(forPdf(line), 14, y); y += 5; });
+      doc.setTextColor(0);
+      startY = y + 3;
+    }
     if (doc.autoTable) {
       doc.autoTable({
-        startY: 46,
+        startY,
         head: [cols.map(c => forPdf(c.label))],
         body: (rows || []).map(r => cols.map(c => forPdf((r[c.key] !== undefined && r[c.key] !== null) ? r[c.key] : ""))),
         styles: { fontSize: 8 },
@@ -287,27 +296,32 @@ const LFS = (() => {
 
   function printReport(title, innerHtml) {
     const s = get("lfs_settings");
+    const t = { ...DEFAULT_THEME, ...(s.theme || {}) };
+    const pair = FONT_PAIRS[t.fontPair] || FONT_PAIRS.classic;
     const now = new Date();
     const win = window.open("", "_blank");
     if (!win) { alert("Please allow pop-ups to print reports."); return; }
     const logo = s.logoDataUrl
       ? `<img src="${s.logoDataUrl}" style="width:52px;height:52px;border-radius:50%;object-fit:cover;">`
-      : `<div style="width:52px;height:52px;border-radius:50%;background:#C9A24B;color:#5A1530;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',Georgia,serif;font-weight:800;font-size:1.3rem;">${(s.storeName || "L").charAt(0)}</div>`;
+      : `<div style="width:52px;height:52px;border-radius:50%;background:${t.accent};color:${t.footer};display:flex;align-items:center;justify-content:center;font-family:${pair.display};font-weight:800;font-size:1.3rem;">${(s.storeName || "L").charAt(0)}</div>`;
     win.document.write(`
       <!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title} - ${s.storeName || "Lakshmi Fancy Store"}</title>
       <style>
-        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=Inter:wght@400;500;600;700&display=swap');
-        *{box-sizing:border-box;} body{font-family:'Inter',system-ui,sans-serif;color:#2A2118;padding:28px;max-width:1000px;margin:0 auto;}
-        h1,h2,h3{font-family:'Playfair Display',Georgia,serif;color:#7A1E3D;margin:.2em 0;}
-        .rpt-header{display:flex;align-items:center;gap:14px;border-bottom:2px solid #C9A24B;padding-bottom:14px;margin-bottom:6px;}
+        ${pair.google ? `@import url('https://fonts.googleapis.com/css2?${pair.google}&display=swap');` : ""}
+        *{box-sizing:border-box;} body{font-family:${pair.body};color:${t.text};padding:28px;max-width:1000px;margin:0 auto;font-size:${FONT_SIZES[t.fontSize] || 16}px;}
+        h1,h2,h3{font-family:${pair.display};color:${t.header};margin:.2em 0;}
+        .rpt-header{display:flex;align-items:center;gap:14px;border-bottom:2px solid ${t.accent};padding-bottom:14px;margin-bottom:6px;}
         .rpt-header .meta{flex:1;}
         .rpt-header .sub{color:#6B5F52;font-size:.85rem;}
         .rpt-when{text-align:right;font-size:.8rem;color:#6B5F52;}
         table{width:100%;border-collapse:collapse;margin-top:14px;font-size:.85rem;}
         th,td{border:1px solid #E4D9C7;padding:6px 8px;text-align:left;}
-        th{background:#F2EAE0;color:#5A1530;}
+        th{background:${t.cardBg};color:${t.footer};}
         .rpt-title{margin:14px 0 4px;font-size:1.15rem;}
         .rpt-foot{margin-top:18px;font-size:.75rem;color:#6B5F52;text-align:center;}
+        .rpt-summary{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0;}
+        .rpt-summary div{background:${t.cardBg};border-radius:8px;padding:8px 12px;font-size:.85rem;}
+        .rpt-summary strong{color:${t.header};}
         @media print{ .no-print{display:none;} body{padding:6px;} }
       </style></head><body>
       <div class="rpt-header">
@@ -322,7 +336,7 @@ const LFS = (() => {
       ${innerHtml}
       <div class="rpt-foot">${s.storeName || "Lakshmi Fancy Store"} - Generated report, for internal use.</div>
       <div class="no-print" style="text-align:center;margin-top:16px;">
-        <button onclick="window.print()" style="padding:8px 18px;border-radius:20px;border:1px solid #7A1E3D;background:#7A1E3D;color:#fff;cursor:pointer;">Print / Save as PDF</button>
+        <button onclick="window.print()" style="padding:8px 18px;border-radius:20px;border:1px solid ${t.header};background:${t.header};color:#fff;cursor:pointer;">Print / Save as PDF</button>
       </div>
       <script>window.onload = function(){ setTimeout(function(){ window.focus(); }, 200); };</script>
       </body></html>
@@ -473,10 +487,36 @@ const LFS = (() => {
   }
 
   /* ---------- site-wide theme ----------
-     Admin-configurable colors, applied as CSS custom-property overrides on
-     the document root. Falls back to the built-in palette if unset.
+     Admin-configurable colors AND fonts, applied as CSS custom-property
+     overrides on the document root (and a root font-size for the size
+     control, since the whole stylesheet is built on rem units). Falls
+     back to the built-in palette/fonts if unset.
   */
-  const DEFAULT_THEME = { bg: "#FBF7F1", header: "#7A1E3D", footer: "#5A1530", accent: "#C9A24B" };
+  const DEFAULT_THEME = {
+    bg: "#FBF7F1", header: "#7A1E3D", footer: "#5A1530", accent: "#C9A24B",
+    cardBg: "#F2EAE0", text: "#2A2118", secondary: "#3E6259",
+    fontPair: "classic", fontSize: "medium"
+  };
+  const FONT_PAIRS = {
+    classic: { label: "Classic (Playfair Display + Inter)", display: "'Playfair Display', Georgia, serif", body: "'Inter', system-ui, sans-serif", google: "family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700" },
+    modern: { label: "Modern (Poppins + Roboto)", display: "'Poppins', sans-serif", body: "'Roboto', sans-serif", google: "family=Poppins:wght@600;700;800&family=Roboto:wght@400;500;600;700" },
+    elegant: { label: "Elegant (Cormorant Garamond + Lato)", display: "'Cormorant Garamond', Georgia, serif", body: "'Lato', sans-serif", google: "family=Cormorant+Garamond:wght@600;700&family=Lato:wght@400;700" },
+    simple: { label: "Simple (System Fonts, no download)", display: "Georgia, 'Times New Roman', serif", body: "-apple-system, system-ui, Arial, sans-serif", google: "" }
+  };
+  const FONT_SIZES = { small: 14, medium: 16, large: 18, xlarge: 20 };
+
+  function ensureGoogleFont(pairKey) {
+    const pair = FONT_PAIRS[pairKey];
+    if (!pair || !pair.google) return;
+    const linkId = "lfs-dynamic-font-" + pairKey;
+    if (document.getElementById(linkId)) return;
+    const link = document.createElement("link");
+    link.id = linkId;
+    link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?" + pair.google + "&display=swap";
+    document.head.appendChild(link);
+  }
+
   function applyTheme() {
     const s = get("lfs_settings");
     const t = { ...DEFAULT_THEME, ...(s.theme || {}) };
@@ -485,6 +525,14 @@ const LFS = (() => {
     root.setProperty("--maroon", t.header);
     root.setProperty("--maroon-dark", t.footer);
     root.setProperty("--gold", t.accent);
+    root.setProperty("--ivory-dim", t.cardBg);
+    root.setProperty("--ink", t.text);
+    root.setProperty("--teal", t.secondary);
+    const pair = FONT_PAIRS[t.fontPair] || FONT_PAIRS.classic;
+    root.setProperty("--font-display", pair.display);
+    root.setProperty("--font-body", pair.body);
+    ensureGoogleFont(t.fontPair);
+    document.documentElement.style.fontSize = (FONT_SIZES[t.fontSize] || 16) + "px";
   }
 
   /* ---------- social link normalization ----------
@@ -542,7 +590,7 @@ const LFS = (() => {
     isValidPhone, isValidEmail, isValidAmount,
     checkPassword, isAuthed, setAuthed, logout, resetAppData,
     formatMoney, todayISO, daysBetween, formatIST, nowISO, normalizeSocialUrl, paintFooter, initGoTop, scrollToTop,
-    rentalNetRevenue, applyTheme, DEFAULT_THEME,
+    rentalNetRevenue, applyTheme, DEFAULT_THEME, FONT_PAIRS, FONT_SIZES,
     currentEmployeeName, setCurrentEmployeeName,
     activePromotionToday, promotionAppliesTo, anyOtherPromotionEnabled,
     PAYMENT_MODES, REFERRAL_SOURCES
@@ -561,7 +609,7 @@ const LFS_EVENT_TYPES = ["Marriage","Baby Shower","Reception","Engagement","Nami
 /* Build marker - open DevTools Console on any device and check this value
    against the version query string on index.html/admin.html's <script> tags
    to confirm the browser isn't showing a stale cached copy of the app. */
-const LFS_BUILD_VERSION = "2026-08-16";
+const LFS_BUILD_VERSION = "2026-08-17";
 console.info("Lakshmi Fancy Store build:", LFS_BUILD_VERSION);
 
 /* Shared recovery action wired to the "Trouble logging in?" link on both

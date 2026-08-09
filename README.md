@@ -1,6 +1,84 @@
 # Lakshmi Fancy Store - Store Management SPA
 
-## Latest updates (2026-08-16)
+## Latest updates (2026-08-17)
+
+- **Fixed iPad promo banner not showing.** Root cause: animating
+  `background-position` on a gradient is unreliably repainted by iOS
+  Safari/WebKit (especially in Low Power Mode). Replaced with GPU-safe
+  `transform`/`opacity`/`box-shadow` animations only, which render
+  reliably on every device.
+- **Font customization**: Admin > Store Setup now has a font-style picker
+  (Classic/Modern/Elegant/Simple, each loading the right Google Fonts on
+  demand) and a text-size picker (Small/Medium/Large/Extra Large) that
+  scales the whole UI, since the stylesheet is built on rem units.
+- **Sub-section color theming** expanded beyond Background/Header/Footer/
+  Accent to include Card Background, Text Color, and Secondary Accent.
+- **Sales Report > Daily Sales & Rentals** now show Total Sales, Total
+  Discounts, Total Points Redeemed, Total Cash Received, and Total GPay
+  Received as stat boxes on the page, and as a summary block at the top of
+  both the printed report and the PDF export.
+- **Attendance & Leave**: Log a Leave now takes a From/To date range
+  (auto-expands into one record per day - useful for a week off) and a
+  Leave Type (Personal / Sick / Other).
+- **Daily Sales backdating**: a "This sale happened on an earlier date"
+  checkbox reveals a date picker capped at yesterday (today/future are
+  blocked); the sale's business `date` is backdated while `createdAt` keeps
+  the real entry time for an audit trail, and a "Backdated" badge shows in
+  Recent Sales.
+- **Phone-number autofill gaps fixed**: audited every phone field in both
+  apps. The Rental "Referred By" phone and the Customer Requirements phone
+  field were missing the customer-lookup wiring entirely - both now
+  autofill name/address from the customer database, keyed on phone number.
+
+## GitHub sync - why data only lives in the browser, and how to actually fix it
+
+**This is an architecture limit, not a bug.** GitHub Pages is 100% static
+hosting - there is no server component, so nothing running in the
+browser can write back to your repository on its own. `localStorage` is
+also strictly per-browser and per-device: two people on two phones looking
+at the same GitHub Pages URL each have their own separate, local copy of
+the data. That's why the JSON only ever updates "in the local system
+cache" - every export/backup button in this app has been a workaround for
+that limit from the start, not the real fix.
+
+If you want genuine real-time sync across every device (sales staff's
+phones + your admin console all seeing the same live data instantly),
+there are three real options, in order of effort:
+
+1. **Commit straight to GitHub from the browser (quick, but has a real
+   security tradeoff).** GitHub's REST API supports authenticated
+   cross-origin requests, so it's possible to add a "Push to GitHub" button
+   that PUTs each `data/*.json` file to your repo using a Personal Access
+   Token entered by the admin. The catch: that token has to live in the
+   browser to make the request, which means anyone with access to that
+   browser's dev tools can see it. Only worth doing with a token scoped to
+   *just* this one repo's contents, and only on a device you trust. I can
+   build this if you want it - say so and I'll add it to Backup & Export.
+2. **A small serverless relay (secure middle ground).** A tiny function
+   (Cloudflare Worker, Vercel/Netlify function, etc. - free tier is enough
+   for a shop this size) holds the GitHub token server-side; the browser
+   calls that function instead of GitHub directly. Keeps the token safe,
+   still no traditional server to maintain, but it's one more thing to
+   deploy outside GitHub Pages itself.
+3. **Swap local JSON for a real real-time database** (Firebase Firestore
+   or Supabase, both have generous free tiers). This is the properly
+   "right" answer if you want live sync - every device reads/writes the
+   same database and sees changes within a second, no export/import or
+   GitHub commits involved at all. It's a bigger change (the `LFS.get`/
+   `LFS.set` functions would swap from `localStorage` to database calls),
+   but it's the standard way apps like this actually solve multi-device
+   sync, and I can help build it if that's the direction you want.
+
+**My recommendation:** if it's mainly one admin device and one or two
+sales devices, option 1 (GitHub API push button) is the fastest fix and
+keeps everything inside the current architecture - just treat that device
+as trusted and use a minimally-scoped token. If you're expecting several
+sales devices working simultaneously and need them to see each other's
+sales in real time, go straight to option 3 (Firebase/Supabase) - patching
+GitHub-as-a-database further will always feel like a workaround. Let me
+know which direction you'd like and I'll build it out.
+
+## Previous updates (2026-08-16)
 
 - **Fixed ₹ showing as garbled text in PDFs**: jsPDF's built-in fonts have
   no glyph for the Rupee sign, so it silently substituted an unrelated

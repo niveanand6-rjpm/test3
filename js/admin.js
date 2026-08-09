@@ -730,13 +730,24 @@ function renderStaffAttendance() {
   const lastMonth = currentMonthStr(-1);
   return `
     <div class="card">
-      <h2>🗓️ Log a Leave Day</h2>
+      <h2>🗓️ Log a Leave</h2>
+      <p class="text-soft">For a single day, set From and To to the same date. For a longer leave (e.g. a week off), set the full range - each day in between is logged automatically.</p>
       <form id="attendanceForm">
-        <div class="grid cols-3">
+        <div class="grid cols-2">
           <div class="field"><label>Employee</label><select id="attStaff">${staff.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("")}</select></div>
-          <div class="field"><label>Date</label><input type="date" id="attDate" value="${LFS.todayISO()}"></div>
-          <div class="field"><label>Reason</label><input type="text" id="attReason" placeholder="e.g. Sick, Personal"></div>
+          <div class="field"><label>Leave Type</label>
+            <select id="attLeaveType">
+              <option value="Personal">Personal</option>
+              <option value="Sick">Sick</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
         </div>
+        <div class="grid cols-2">
+          <div class="field"><label>From Date</label><input type="date" id="attFromDate" value="${LFS.todayISO()}"></div>
+          <div class="field"><label>To Date</label><input type="date" id="attToDate" value="${LFS.todayISO()}"></div>
+        </div>
+        <div class="field"><label>Reason / Notes</label><input type="text" id="attReason" placeholder="Optional additional detail"></div>
         <button class="btn btn-primary" type="submit">Log Leave</button>
       </form>
     </div>
@@ -792,16 +803,31 @@ function downloadAttendancePDF() {
 }
 function saveAttendance(e) {
   e.preventDefault();
+  const staffId = document.getElementById("attStaff").value;
+  const leaveType = document.getElementById("attLeaveType").value;
+  const reason = document.getElementById("attReason").value.trim();
+  const fromDate = document.getElementById("attFromDate").value || LFS.todayISO();
+  const toDate = document.getElementById("attToDate").value || fromDate;
+  if (toDate < fromDate) { toast("To Date can't be before From Date"); return; }
+
   const att = LFS.get("lfs_attendance");
-  att.push({
-    id: LFS.uid("att"),
-    staffId: document.getElementById("attStaff").value,
-    date: document.getElementById("attDate").value || LFS.todayISO(),
-    type: "leave",
-    reason: document.getElementById("attReason").value.trim()
-  });
+  let cursor = new Date(fromDate);
+  const end = new Date(toDate);
+  let daysLogged = 0;
+  while (cursor <= end) {
+    att.push({
+      id: LFS.uid("att"),
+      staffId,
+      date: cursor.toISOString().slice(0, 10),
+      type: "leave",
+      leaveType,
+      reason
+    });
+    cursor.setDate(cursor.getDate() + 1);
+    daysLogged++;
+  }
   LFS.set("lfs_attendance", att);
-  toast("Leave logged");
+  toast(daysLogged === 1 ? "Leave logged" : `${daysLogged} days of leave logged`);
   renderAdminModule();
 }
 
@@ -1273,8 +1299,19 @@ function renderSRReferral() {
 }
 
 /* ---------- 4. Daily Sales ---------- */
+function dailySalesSummaryTotals() {
+  const sales = LFS.get("lfs_sales");
+  return {
+    totalSales: sales.reduce((s, x) => s + Number(x.total || 0), 0),
+    totalDiscounts: sales.reduce((s, x) => s + Number(x.discount || 0), 0),
+    totalPointsRedeemed: sales.reduce((s, x) => s + Number(x.pointsRedeemed || 0), 0),
+    cashReceived: sales.filter(x => x.paymentMode === "Cash").reduce((s, x) => s + Number(x.total || 0), 0),
+    gpayReceived: sales.filter(x => x.paymentMode === "GPay").reduce((s, x) => s + Number(x.total || 0), 0)
+  };
+}
 function renderSRDailySales() {
   const sales = LFS.get("lfs_sales");
+  const tot = dailySalesSummaryTotals();
   return `
     <div class="card">
       <div class="flex-between"><h3 style="margin:0;">🛍️ Daily Sales</h3>
@@ -1283,6 +1320,15 @@ function renderSRDailySales() {
           <button class="btn btn-outline btn-sm" onclick="downloadDailySalesPDF()">PDF</button>
           <button class="btn btn-outline btn-sm" onclick="LFS.downloadCSV('sales.csv', LFS.get('lfs_sales'))">Export CSV</button>
         </div>
+      </div>
+      <div class="grid cols-3 mt-16">
+        <div class="stat-box"><div class="num">${LFS.formatMoney(tot.totalSales)}</div><div class="lbl">Total Sales</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(tot.totalDiscounts)}</div><div class="lbl">Total Discounts</div></div>
+        <div class="stat-box"><div class="num">${tot.totalPointsRedeemed}</div><div class="lbl">Total Points Redeemed</div></div>
+      </div>
+      <div class="grid cols-2 mt-16">
+        <div class="stat-box"><div class="num">${LFS.formatMoney(tot.cashReceived)}</div><div class="lbl">Total Cash Received</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(tot.gpayReceived)}</div><div class="lbl">Total GPay Received</div></div>
       </div>
       <div class="chart-box mt-16"><h4>Top-Selling Items (by revenue)</h4><canvas id="chartTopItems"></canvas></div>
       <div class="table-wrap mt-16">
@@ -1296,8 +1342,31 @@ function renderSRDailySales() {
 }
 
 /* ---------- 5. Rentals ---------- */
+function rentalsSummaryTotals() {
+  const rentals = LFS.get("lfs_rentals");
+  const cashOf = r => {
+    let c = 0;
+    if (r.advancePaymentMode === "Cash") c += Number(r.advancePaid || 0);
+    if (r.status !== "active" && r.settlementPaymentMode === "Cash") c += Math.max(0, Number(r.balance || 0));
+    return c;
+  };
+  const gpayOf = r => {
+    let g = 0;
+    if (r.advancePaymentMode === "GPay") g += Number(r.advancePaid || 0);
+    if (r.status !== "active" && r.settlementPaymentMode === "GPay") g += Math.max(0, Number(r.balance || 0));
+    return g;
+  };
+  return {
+    totalSales: rentals.reduce((s, r) => s + LFS.rentalNetRevenue(r), 0),
+    totalDiscounts: rentals.reduce((s, r) => s + Number(r.discount || 0), 0),
+    totalPointsRedeemed: rentals.reduce((s, r) => s + Number(r.pointsRedeemed || 0), 0),
+    cashReceived: rentals.reduce((s, r) => s + cashOf(r), 0),
+    gpayReceived: rentals.reduce((s, r) => s + gpayOf(r), 0)
+  };
+}
 function renderSRRentals() {
   const rentals = LFS.get("lfs_rentals");
+  const tot = rentalsSummaryTotals();
   return `
     <div class="card">
       <div class="flex-between"><h3 style="margin:0;">💍 Rentals</h3>
@@ -1306,6 +1375,15 @@ function renderSRRentals() {
           <button class="btn btn-outline btn-sm" onclick="downloadRentalsPDF()">PDF</button>
           <button class="btn btn-outline btn-sm" onclick="LFS.downloadCSV('rentals.csv', LFS.get('lfs_rentals'))">Export CSV</button>
         </div>
+      </div>
+      <div class="grid cols-3 mt-16">
+        <div class="stat-box"><div class="num">${LFS.formatMoney(tot.totalSales)}</div><div class="lbl">Total Sales (Net Revenue)</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(tot.totalDiscounts)}</div><div class="lbl">Total Discounts</div></div>
+        <div class="stat-box"><div class="num">${tot.totalPointsRedeemed}</div><div class="lbl">Total Points Redeemed</div></div>
+      </div>
+      <div class="grid cols-2 mt-16">
+        <div class="stat-box"><div class="num">${LFS.formatMoney(tot.cashReceived)}</div><div class="lbl">Total Cash Received</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(tot.gpayReceived)}</div><div class="lbl">Total GPay Received</div></div>
       </div>
       <div class="grid cols-2 mt-16">
         <div class="chart-box"><h4>Rental Status Breakdown</h4><canvas id="chartRentalStatus"></canvas></div>
@@ -1498,14 +1576,30 @@ function dailySalesRows() {
   }));
 }
 function printDailySalesReport() {
-  LFS.printReport("Daily Sales Report", LFS.tableHtml(dailySalesRows(), [
+  const tot = dailySalesSummaryTotals();
+  const summaryHtml = `<div class="rpt-summary">
+    <div>Total Sales: <strong>${LFS.formatMoney(tot.totalSales)}</strong></div>
+    <div>Total Discounts: <strong>${LFS.formatMoney(tot.totalDiscounts)}</strong></div>
+    <div>Points Redeemed: <strong>${tot.totalPointsRedeemed}</strong></div>
+    <div>Cash Received: <strong>${LFS.formatMoney(tot.cashReceived)}</strong></div>
+    <div>GPay Received: <strong>${LFS.formatMoney(tot.gpayReceived)}</strong></div>
+  </div>`;
+  LFS.printReport("Daily Sales Report", summaryHtml + LFS.tableHtml(dailySalesRows(), [
     { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "qty", label: "Qty" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "payment", label: "Payment" }, { key: "discount", label: "Discount" }, { key: "pointsEarned", label: "Points Earned" }, { key: "pointsRedeemed", label: "Points Redeemed" }, { key: "total", label: "Total" }
   ]));
 }
 function downloadDailySalesPDF() {
+  const tot = dailySalesSummaryTotals();
+  const summaryLines = [
+    `Total Sales: ${LFS.formatMoney(tot.totalSales)}`,
+    `Total Discounts: ${LFS.formatMoney(tot.totalDiscounts)}`,
+    `Total Points Redeemed: ${tot.totalPointsRedeemed}`,
+    `Cash Received: ${LFS.formatMoney(tot.cashReceived)}`,
+    `GPay Received: ${LFS.formatMoney(tot.gpayReceived)}`
+  ];
   LFS.downloadPDF("Daily Sales Report", dailySalesRows(), [
     { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "qty", label: "Qty" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "payment", label: "Payment" }, { key: "discount", label: "Discount" }, { key: "pointsEarned", label: "Points Earned" }, { key: "pointsRedeemed", label: "Points Redeemed" }, { key: "total", label: "Total" }
-  ]);
+  ], summaryLines);
 }
 function rentalsRows() {
   return LFS.get("lfs_rentals").slice().reverse().map(r => ({
@@ -1516,14 +1610,30 @@ function rentalsRows() {
   }));
 }
 function printRentalsReport() {
-  LFS.printReport("Rentals Report", LFS.tableHtml(rentalsRows(), [
+  const tot = rentalsSummaryTotals();
+  const summaryHtml = `<div class="rpt-summary">
+    <div>Total Sales (Net Revenue): <strong>${LFS.formatMoney(tot.totalSales)}</strong></div>
+    <div>Total Discounts: <strong>${LFS.formatMoney(tot.totalDiscounts)}</strong></div>
+    <div>Points Redeemed: <strong>${tot.totalPointsRedeemed}</strong></div>
+    <div>Cash Received: <strong>${LFS.formatMoney(tot.cashReceived)}</strong></div>
+    <div>GPay Received: <strong>${LFS.formatMoney(tot.gpayReceived)}</strong></div>
+  </div>`;
+  LFS.printReport("Rentals Report", summaryHtml + LFS.tableHtml(rentalsRows(), [
     { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "status", label: "Status" }, { key: "referredBy", label: "Referred By" }, { key: "rentalCharge", label: "Rental Charge" }, { key: "deposit", label: "Deposit (Refundable)" }, { key: "netRevenue", label: "Net Revenue" }, { key: "balance", label: "Balance" }
   ]));
 }
 function downloadRentalsPDF() {
+  const tot = rentalsSummaryTotals();
+  const summaryLines = [
+    `Total Sales (Net Revenue): ${LFS.formatMoney(tot.totalSales)}`,
+    `Total Discounts: ${LFS.formatMoney(tot.totalDiscounts)}`,
+    `Total Points Redeemed: ${tot.totalPointsRedeemed}`,
+    `Cash Received: ${LFS.formatMoney(tot.cashReceived)}`,
+    `GPay Received: ${LFS.formatMoney(tot.gpayReceived)}`
+  ];
   LFS.downloadPDF("Rentals Report", rentalsRows(), [
     { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "status", label: "Status" }, { key: "referredBy", label: "Referred By" }, { key: "rentalCharge", label: "Rental Charge" }, { key: "deposit", label: "Deposit (Refundable)" }, { key: "netRevenue", label: "Net Revenue" }, { key: "balance", label: "Balance" }
-  ]);
+  ], summaryLines);
 }
 
 /* ---------- Referral Program report exports ---------- */
@@ -1909,14 +2019,37 @@ function renderPersonalizationModule() {
         </div>
 
         <h3 class="mt-16">🎨 Website Theme</h3>
-        <p class="text-soft">Customize the colors used across both the sales app and this admin console. Changes apply immediately after saving.</p>
+        <p class="text-soft">Customize the colors and fonts used across both the sales app and this admin console. Changes apply immediately after saving.</p>
+        <p class="text-soft" style="font-weight:700;">Main colors</p>
         <div class="grid cols-4">
           <div class="field"><label>Background</label><input type="color" id="pThemeBg" value="${(s.theme && s.theme.bg) || LFS.DEFAULT_THEME.bg}" style="height:42px;padding:4px;"></div>
           <div class="field"><label>Header / Primary</label><input type="color" id="pThemeHeader" value="${(s.theme && s.theme.header) || LFS.DEFAULT_THEME.header}" style="height:42px;padding:4px;"></div>
           <div class="field"><label>Footer</label><input type="color" id="pThemeFooter" value="${(s.theme && s.theme.footer) || LFS.DEFAULT_THEME.footer}" style="height:42px;padding:4px;"></div>
           <div class="field"><label>Accent / Animation</label><input type="color" id="pThemeAccent" value="${(s.theme && s.theme.accent) || LFS.DEFAULT_THEME.accent}" style="height:42px;padding:4px;"></div>
         </div>
-        <button type="button" class="btn btn-outline btn-sm" onclick="resetTheme()">Reset to Default Colors</button>
+        <p class="text-soft mt-8" style="font-weight:700;">Sub-section colors</p>
+        <div class="grid cols-3">
+          <div class="field"><label>Card / Sub-section Background</label><input type="color" id="pThemeCardBg" value="${(s.theme && s.theme.cardBg) || LFS.DEFAULT_THEME.cardBg}" style="height:42px;padding:4px;"></div>
+          <div class="field"><label>Text Color</label><input type="color" id="pThemeText" value="${(s.theme && s.theme.text) || LFS.DEFAULT_THEME.text}" style="height:42px;padding:4px;"></div>
+          <div class="field"><label>Secondary Accent (badges, success states)</label><input type="color" id="pThemeSecondary" value="${(s.theme && s.theme.secondary) || LFS.DEFAULT_THEME.secondary}" style="height:42px;padding:4px;"></div>
+        </div>
+        <p class="text-soft mt-8" style="font-weight:700;">Fonts</p>
+        <div class="grid cols-2">
+          <div class="field"><label>Font Style</label>
+            <select id="pThemeFontPair">
+              ${Object.keys(LFS.FONT_PAIRS).map(k => `<option value="${k}" ${((s.theme && s.theme.fontPair) || "classic") === k ? "selected" : ""}>${LFS.FONT_PAIRS[k].label}</option>`).join("")}
+            </select>
+          </div>
+          <div class="field"><label>Text Size</label>
+            <select id="pThemeFontSize">
+              <option value="small" ${((s.theme && s.theme.fontSize) || "medium") === "small" ? "selected" : ""}>Small</option>
+              <option value="medium" ${((s.theme && s.theme.fontSize) || "medium") === "medium" ? "selected" : ""}>Medium (default)</option>
+              <option value="large" ${((s.theme && s.theme.fontSize) || "medium") === "large" ? "selected" : ""}>Large</option>
+              <option value="xlarge" ${((s.theme && s.theme.fontSize) || "medium") === "xlarge" ? "selected" : ""}>Extra Large</option>
+            </select>
+          </div>
+        </div>
+        <button type="button" class="btn btn-outline btn-sm" onclick="resetTheme()">Reset to Default Theme</button>
 
         <button class="btn btn-primary mt-16" type="submit">Save Store Settings</button>
       </form>
@@ -1928,6 +2061,11 @@ function resetTheme() {
   document.getElementById("pThemeHeader").value = LFS.DEFAULT_THEME.header;
   document.getElementById("pThemeFooter").value = LFS.DEFAULT_THEME.footer;
   document.getElementById("pThemeAccent").value = LFS.DEFAULT_THEME.accent;
+  document.getElementById("pThemeCardBg").value = LFS.DEFAULT_THEME.cardBg;
+  document.getElementById("pThemeText").value = LFS.DEFAULT_THEME.text;
+  document.getElementById("pThemeSecondary").value = LFS.DEFAULT_THEME.secondary;
+  document.getElementById("pThemeFontPair").value = LFS.DEFAULT_THEME.fontPair;
+  document.getElementById("pThemeFontSize").value = LFS.DEFAULT_THEME.fontSize;
 }
 function savePersonalization(e) {
   e.preventDefault();
@@ -1964,11 +2102,17 @@ function savePersonalization(e) {
         bg: document.getElementById("pThemeBg").value,
         header: document.getElementById("pThemeHeader").value,
         footer: document.getElementById("pThemeFooter").value,
-        accent: document.getElementById("pThemeAccent").value
+        accent: document.getElementById("pThemeAccent").value,
+        cardBg: document.getElementById("pThemeCardBg").value,
+        text: document.getElementById("pThemeText").value,
+        secondary: document.getElementById("pThemeSecondary").value,
+        fontPair: document.getElementById("pThemeFontPair").value,
+        fontSize: document.getElementById("pThemeFontSize").value
       }
     };
     LFS.set("lfs_settings", updated);
     toast("Store settings saved");
+    LFS.applyTheme();
     paintAdminHeader();
     renderAdminModule();
   });
