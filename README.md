@@ -1,6 +1,34 @@
 # Lakshmi Fancy Store - Store Management SPA (v15)
 
-## Latest updates (2026-08-24) - Gallery hero "celebration" effects
+## Latest updates (2026-08-25) - Magic cursor/touch trail
+
+- **Sparkles, rings, and celebration emoji now follow the pointer** across
+  the whole gallery page - the mouse cursor on desktop, and the finger on
+  Android/iPhone/iPad.
+- **Cross-device design, checked explicitly:**
+  - The real cursor/finger is **never hidden** - the trail only ever adds
+    decorative particles on top, so there's always a working pointer even
+    before the script finishes loading.
+  - The trail layer is `pointer-events:none`, so it can never intercept a
+    tap meant for a jewellery card, a filter chip, or any button.
+  - All listeners are registered `{ passive: true }` and never call
+    `preventDefault`, so touch-scrolling stays smooth and is never
+    blocked.
+  - Spawn rate is time-throttled (100ms) and capped at 24 particles alive
+    at once, so a fast mouse swipe or a scroll-swipe on a lower-end phone
+    can't flood the page with elements.
+  - `touchstart` is detected first and disables the `mousemove` handler
+    afterwards - mobile browsers fire a synthetic mouse event after a
+    real touch, and without this guard a single tap would have spawned
+    two particles instead of one.
+  - Every animated property is `transform`/`opacity` only (never
+    `background-position`), the same rule that fixed the earlier iPad
+    Safari bug elsewhere in this app - verified again here for the same
+    reason.
+  - Respects `prefers-reduced-motion` - skips entirely for anyone with
+    that accessibility setting on.
+
+## Previous updates (2026-08-24) - Gallery hero "celebration" effects
 
 - **Wedding fairy lights**: a row of warm gold/blush/ivory bulbs twinkling
   out of sync along the top edge of the hero, like a string of party

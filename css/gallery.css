@@ -281,10 +281,40 @@ body.gallery-body{ padding-bottom:0; background:var(--ivory); }
 .lightbox-cta-buttons{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
 .lightbox-qr{ width:110px; height:110px; object-fit:cover; border-radius:10px; margin:12px auto 0; display:block; border:1px solid var(--border); }
 
+/* ---------- magic cursor trail (desktop mouse + mobile/tablet touch) ----------
+   The real cursor/finger stays fully visible and functional at all times -
+   this only ever adds decorative, non-interactive particles on top, so it
+   can never block a tap, a click, or scrolling on any device.
+*/
+#cursorTrailLayer{ position:fixed; inset:0; pointer-events:none; z-index:9999; overflow:hidden; }
+.trail-particle{
+  position:fixed;
+  transform:translate(-50%, -50%) scale(.4);
+  opacity:0;
+  pointer-events:none;
+  animation:trailPop .85s ease-out forwards;
+  will-change:transform, opacity;
+}
+.trail-particle.is-dot{
+  width:6px; height:6px; border-radius:50%;
+  background:currentColor;
+  box-shadow:0 0 8px 2px currentColor;
+}
+.trail-particle.is-emoji{ font-size:1.05rem; filter:drop-shadow(0 1px 2px rgba(0,0,0,.3)); }
+@keyframes trailPop{
+  0%{ opacity:0; transform:translate(-50%, -50%) scale(.3) rotate(0deg); }
+  22%{ opacity:1; transform:translate(-50%, -50%) scale(1.05) rotate(8deg); }
+  100%{ opacity:0; transform:translate(-50%, calc(-50% - 34px)) scale(.6) rotate(-14deg); }
+}
+
 /* ---------- responsive ---------- */
 @media (max-width:520px){
   .gallery-hero{ padding:40px 16px 30px; }
   .gallery-hero h1{ font-size:1.6rem; }
   .gallery-grid{ grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:14px; }
   .jewel-info h3{ font-size:.9rem; }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .trail-particle{ display:none; }
 }

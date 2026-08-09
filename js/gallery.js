@@ -11,6 +11,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await LFS.init();
   LFS.applyTheme();
   paintGalleryBrand();
+  initCursorTrail();
   if (LFS.isAuthed("lfs_auth_gallery")) {
     showGalleryScreen();
   } else {
@@ -21,6 +22,78 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 const REDUCE_MOTION = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ============================================================
+   MAGIC CURSOR / TOUCH TRAIL
+   Sparkles, rings, and celebration emoji follow the mouse on desktop and
+   the finger on touch devices (Android/iPhone/iPad) - purely decorative,
+   never blocks a click/tap or interferes with scrolling:
+   - The real cursor/finger is never hidden, so there's always a working
+     pointer even if this script is slow to start.
+   - The trail layer is `pointer-events:none`, so it can never intercept
+     a tap meant for a jewellery card or a button underneath it.
+   - Listeners are `{ passive: true }` and never call preventDefault, so
+     touch-scrolling is never blocked or made janky.
+   - Spawn rate is time-throttled and capped at a max number of particles
+     alive at once, so a fast mouse swipe or a scroll-swipe on a low-end
+     phone can't flood the DOM.
+   - `touchstart` is checked first and disables the mousemove listener's
+     effect afterwards, because mobile browsers fire synthetic mouse
+     events after touch events - without this a tap would spawn two
+     particles (one from touch, one from the synthetic mouse event).
+   - Respects prefers-reduced-motion (skips entirely).
+*/
+const TRAIL_EMOJI = ["✨", "💫", "⭐", "💍", "🎊", "👶", "🎀", "💐", "🧨", "🎆"];
+const TRAIL_DOT_COLORS = ["#C9A24B", "#F2A6A6", "#8EC6B8", "#FFF6E0"];
+const TRAIL_THROTTLE_MS = 100;
+const TRAIL_MAX_ACTIVE = 24;
+let trailLastSpawn = 0;
+let trailUsedTouch = false;
+let trailActiveCount = 0;
+
+function initCursorTrail() {
+  if (REDUCE_MOTION) return;
+  if (!document.getElementById("cursorTrailLayer")) return;
+
+  document.addEventListener("mousemove", (e) => {
+    if (trailUsedTouch) return; // avoid double-spawn from a touch device's synthetic mouse events
+    spawnTrailParticle(e.clientX, e.clientY);
+  }, { passive: true });
+
+  document.addEventListener("touchstart", (e) => {
+    trailUsedTouch = true;
+    const t = e.touches && e.touches[0];
+    if (t) spawnTrailParticle(t.clientX, t.clientY);
+  }, { passive: true });
+
+  document.addEventListener("touchmove", (e) => {
+    const t = e.touches && e.touches[0];
+    if (t) spawnTrailParticle(t.clientX, t.clientY);
+  }, { passive: true });
+}
+
+function spawnTrailParticle(x, y) {
+  const now = Date.now();
+  if (now - trailLastSpawn < TRAIL_THROTTLE_MS) return;
+  if (trailActiveCount >= TRAIL_MAX_ACTIVE) return;
+  const layer = document.getElementById("cursorTrailLayer");
+  if (!layer) return;
+  trailLastSpawn = now;
+
+  const el = document.createElement("span");
+  if (Math.random() < 0.55) {
+    el.className = "trail-particle is-emoji";
+    el.textContent = TRAIL_EMOJI[Math.floor(Math.random() * TRAIL_EMOJI.length)];
+  } else {
+    el.className = "trail-particle is-dot";
+    el.style.color = TRAIL_DOT_COLORS[Math.floor(Math.random() * TRAIL_DOT_COLORS.length)];
+  }
+  el.style.left = x + "px";
+  el.style.top = y + "px";
+  layer.appendChild(el);
+  trailActiveCount++;
+  setTimeout(() => { el.remove(); trailActiveCount--; }, 900);
+}
 
 function spawnSparkles() {
   const holder = document.getElementById("heroSparkles");
