@@ -5,13 +5,11 @@
     "phone": "9876543210",
     "address": "12 Kovil Street",
     "region": "Rajapalayam",
-    "loyaltyPoints": 340,
+    "loyaltyPoints": 0,
     "repeatCustomer": true,
     "reviewGiven": true,
     "reviewPlatform": "Google",
-    "howHeard": "Friend / Family Referral",
-    "notes": "",
-    "createdAt": "2026-02-10T10:15:00.000+05:30"
+    "notes": ""
   },
   {
     "id": "cus_002",
@@ -19,12 +17,24 @@
     "phone": "9944112233",
     "address": "45 Bazaar Road",
     "region": "Srivilliputtur",
-    "loyaltyPoints": 60,
-    "repeatCustomer": false,
+    "loyaltyPoints": 105,
+    "repeatCustomer": true,
     "reviewGiven": false,
     "reviewPlatform": "",
-    "howHeard": "Instagram",
+    "notes": ""
+  },
+  {
+    "id": "cus_msm0em5crsr9i",
+    "name": "Balamurugan V",
+    "phone": "9941625199",
+    "address": "T1, PLOT NO 13,",
+    "region": "Rajapalayam",
+    "howHeard": "Walk-in / Passing by",
+    "loyaltyPoints": 233,
+    "repeatCustomer": true,
+    "reviewGiven": false,
+    "reviewPlatform": "",
     "notes": "",
-    "createdAt": "2026-06-22T16:40:00.000+05:30"
+    "createdAt": "2026-08-09T16:20:53.280Z"
   }
 ]
