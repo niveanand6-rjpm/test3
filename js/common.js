@@ -430,6 +430,53 @@ const LFS = (() => {
   }
   function nowISO() { return new Date().toISOString(); }
 
+  /* ---------- social link normalization ----------
+     Admin can type a full URL or just a handle (e.g. "@lakshmifancystore")
+     - this builds a sensible clickable link either way.
+  */
+  function normalizeSocialUrl(platform, value) {
+    if (!value) return "";
+    const v = String(value).trim();
+    if (/^https?:\/\//i.test(v)) return v;
+    const handle = v.replace(/^@/, "");
+    switch (platform) {
+      case "facebook": return "https://facebook.com/" + handle;
+      case "instagram": return "https://instagram.com/" + handle;
+      case "twitter": return "https://x.com/" + handle;
+      case "whatsapp": return "https://wa.me/" + handle.replace(/\D/g, "");
+      default: return v;
+    }
+  }
+
+  /* ---------- shared business-style footer (social + contact us) ---------- */
+  function paintFooter(containerId) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    const s = get("lfs_settings");
+    const social = s.social || {};
+    const socialIcons = { facebook: "📘 Facebook", instagram: "📸 Instagram", twitter: "𝕏 Twitter/X", whatsapp: "💬 WhatsApp" };
+    const socialLinks = Object.keys(socialIcons)
+      .filter(k => social[k])
+      .map(k => `<a href="${normalizeSocialUrl(k, social[k])}" target="_blank" rel="noopener">${socialIcons[k]}</a>`)
+      .join("");
+    const contactBits = [
+      s.phone ? `📞 ${s.phone}` : "",
+      s.email ? `✉️ ${s.email}` : "",
+      s.address ? `📍 ${s.address}` : ""
+    ].filter(Boolean).join(" &nbsp;&middot;&nbsp; ");
+    el.innerHTML = `
+      <div class="site-footer-inner">
+        <div class="footer-store">
+          <strong>${s.storeName || "Lakshmi Fancy Store"}</strong>
+          ${s.gstNumber ? `<span class="text-soft"> &middot; GSTIN: ${s.gstNumber}</span>` : ""}
+        </div>
+        ${contactBits ? `<div class="footer-contact">${contactBits}</div>` : ""}
+        ${socialLinks ? `<div class="footer-social">${socialLinks}</div>` : ""}
+        <div class="footer-copy">&copy; ${new Date().getFullYear()} ${s.storeName || "Lakshmi Fancy Store"}. All rights reserved.</div>
+      </div>
+    `;
+  }
+
   return {
     SEED_MAP, ALL_KEYS, init, get, set, uid,
     downloadJSON, exportModule, exportFullBackup, importModule, importFullBackup,
@@ -437,7 +484,7 @@ const LFS = (() => {
     downloadPDF, printReport, tableHtml,
     isValidPhone, isValidEmail, isValidAmount,
     checkPassword, isAuthed, setAuthed, logout, resetAppData,
-    formatMoney, todayISO, daysBetween, formatIST, nowISO,
+    formatMoney, todayISO, daysBetween, formatIST, nowISO, normalizeSocialUrl, paintFooter,
     currentEmployeeName, setCurrentEmployeeName,
     activePromotionToday, promotionAppliesTo, anyOtherPromotionEnabled,
     PAYMENT_MODES, REFERRAL_SOURCES
@@ -456,7 +503,7 @@ const LFS_EVENT_TYPES = ["Marriage","Baby Shower","Reception","Engagement","Nami
 /* Build marker - open DevTools Console on any device and check this value
    against the version query string on index.html/admin.html's <script> tags
    to confirm the browser isn't showing a stale cached copy of the app. */
-const LFS_BUILD_VERSION = "2026-08-12";
+const LFS_BUILD_VERSION = "2026-08-13";
 console.info("Lakshmi Fancy Store build:", LFS_BUILD_VERSION);
 
 /* Shared recovery action wired to the "Trouble logging in?" link on both

@@ -28,6 +28,13 @@ function paintAdminHeader() {
   document.title = (s.storeName || "Lakshmi Fancy Store") + " - Admin";
   const nameSlot = document.getElementById("adminStoreName");
   if (nameSlot) nameSlot.textContent = (s.storeName || "Lakshmi Fancy Store") + " · Admin Console";
+  const logoSlot = document.getElementById("adminLogoSlot");
+  if (logoSlot) {
+    logoSlot.innerHTML = s.logoDataUrl
+      ? `<img class="logo" src="${s.logoDataUrl}" alt="logo">`
+      : `<div class="logo-fallback">${(s.storeName || "L").charAt(0)}</div>`;
+  }
+  LFS.paintFooter("adminFooter");
 }
 
 function showAdminLogin() {
@@ -123,7 +130,7 @@ function renderImagesModule() {
   const images = LFS.get("lfs_images").slice().reverse();
   return `
     <div class="card">
-      <h2>Image Portal</h2>
+      <h2>🖼️ Image Portal</h2>
       <p class="text-soft">Upload jewellery / item photos once here, then pick them from the library when adding Stock or Rental Inventory items - no need to re-upload the same photo each time.</p>
       <form id="imageUploadForm">
         <div class="field"><label>Upload Image(s)</label><input type="file" id="imgUploadInput" accept="image/*" multiple required></div>
@@ -220,7 +227,7 @@ function renderStockModule() {
   const editing = EDIT_STOCK_ID ? items.find(i => i.id === EDIT_STOCK_ID) : null;
   return `
     <div class="card">
-      <h2>${editing ? "Edit Stock Item" : "Add Stock Item"}</h2>
+      <h2>📦 ${editing ? "Edit Stock Item" : "Add Stock Item"}</h2>
       <form id="stockForm">
         <input type="hidden" id="stkId" value="${editing ? editing.id : ""}">
         <div class="grid cols-2">
@@ -254,7 +261,7 @@ function renderStockModule() {
     ${renderBulkUploadCard("stock")}
 
     <div class="card">
-      <div class="flex-between"><h2 style="margin:0;">Stock List (${items.length})</h2>
+      <div class="flex-between"><h2 style="margin:0;">📦 Stock List (${items.length})</h2>
         <div class="flex gap-8">
           <button class="btn btn-outline btn-sm" onclick="printStockReport()">Print</button>
           <button class="btn btn-outline btn-sm" onclick="downloadStockPDF()">PDF</button>
@@ -335,7 +342,7 @@ function renderRentalInvModule() {
   const editing = EDIT_RENTAL_ID ? items.find(i => i.id === EDIT_RENTAL_ID) : null;
   return `
     <div class="card">
-      <h2>${editing ? "Edit Rental Item" : "Add Rental Jewellery Item"}</h2>
+      <h2>💍 ${editing ? "Edit Rental Item" : "Add Rental Jewellery Item"}</h2>
       <form id="rentalInvForm">
         <input type="hidden" id="rivId" value="${editing ? editing.id : ""}">
         <div class="grid cols-2">
@@ -357,6 +364,18 @@ function renderRentalInvModule() {
           <div class="field"><label>Purchase Price (₹)</label><input type="number" id="rivPurchasePrice" min="0" value="${editing ? editing.purchasePrice || 0 : 0}"></div>
         </div>
         <div class="field"><label>Warranty</label><input type="text" id="rivWarranty" placeholder="e.g. None / 6 months" value="${editing ? escapeHtml(editing.warranty || "") : ""}"></div>
+        <h3 class="mt-16">🤝 Referral Commission</h3>
+        <p class="text-soft">If a customer was referred by someone for this item, this is what the referrer earns.</p>
+        <div class="grid cols-2">
+          <div class="field"><label>Commission Type</label>
+            <select id="rivCommissionType">
+              <option value="none" ${editing && editing.commissionType === "none" ? "selected" : ""}>None</option>
+              <option value="percentage" ${!editing || editing.commissionType === "percentage" ? "selected" : ""}>Percentage of rental charge</option>
+              <option value="flat" ${editing && editing.commissionType === "flat" ? "selected" : ""}>Flat amount (₹)</option>
+            </select>
+          </div>
+          <div class="field"><label>Commission Value</label><input type="number" id="rivCommissionValue" min="0" step="0.1" value="${editing ? editing.commissionValue || 0 : 0}"></div>
+        </div>
         <div class="field">
           <label>Item Image</label>
           <div class="image-pick-row">
@@ -376,7 +395,7 @@ function renderRentalInvModule() {
     ${renderBulkUploadCard("rental")}
 
     <div class="card">
-      <div class="flex-between"><h2 style="margin:0;">Rental Master Data (${items.length})</h2>
+      <div class="flex-between"><h2 style="margin:0;">💍 Rental Master Data (${items.length})</h2>
         <div class="flex gap-8">
           <button class="btn btn-outline btn-sm" onclick="printRentalInvReport()">Print</button>
           <button class="btn btn-outline btn-sm" onclick="downloadRentalInvPDF()">PDF</button>
@@ -386,22 +405,27 @@ function renderRentalInvModule() {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Item</th><th>Code</th><th>Rate/Day</th><th>Deposit</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Item</th><th>Code</th><th>Rate/Day</th><th>Deposit</th><th>Commission</th><th>Status</th><th></th></tr></thead>
           <tbody>
             ${items.map(i => `
               <tr>
                 <td>${escapeHtml(i.itemName)}</td><td class="mono">${i.itemCode}</td><td>${LFS.formatMoney(i.dailyRate)}</td><td>${LFS.formatMoney(i.deposit)}</td>
+                <td>${describeCommission(i)}</td>
                 <td><span class="badge ${i.status === 'available' ? 'badge-available' : 'badge-rented'}">${i.status}</span></td>
                 <td class="flex gap-8">
                   <button class="btn btn-outline btn-sm" onclick="EDIT_RENTAL_ID='${i.id}';renderAdminModule();">Edit</button>
                   <button class="btn btn-danger btn-sm" onclick="deleteRentalItem('${i.id}')">Delete</button>
                 </td>
-              </tr>`).join("") || `<tr><td colspan="6" class="text-soft">No items yet.</td></tr>`}
+              </tr>`).join("") || `<tr><td colspan="7" class="text-soft">No items yet.</td></tr>`}
           </tbody>
         </table>
       </div>
     </div>
   `;
+}
+function describeCommission(item) {
+  if (!item.commissionType || item.commissionType === "none" || !item.commissionValue) return `<span class="text-soft">None</span>`;
+  return item.commissionType === "percentage" ? `${item.commissionValue}%` : LFS.formatMoney(item.commissionValue);
 }
 function saveRentalItem(e) {
   e.preventDefault();
@@ -423,6 +447,8 @@ function saveRentalItem(e) {
       purchaseDate: document.getElementById("rivPurchaseDate").value,
       purchasePrice: Number(document.getElementById("rivPurchasePrice").value) || 0,
       warranty: document.getElementById("rivWarranty").value.trim(),
+      commissionType: document.getElementById("rivCommissionType").value,
+      commissionValue: Number(document.getElementById("rivCommissionValue").value) || 0,
       imageDataUrl: finalImage,
       timesRented: existing ? existing.timesRented || 0 : 0,
       totalEarned: existing ? existing.totalEarned || 0 : 0
@@ -498,7 +524,7 @@ function renderBulkUploadCard(type) {
 function downloadBulkTemplate(type) {
   const rows = type === "stock"
     ? [{ itemName: "Oxidised Jhumka Earrings", itemCode: "EAR-099", category: "Imitation Jewellery", itemType: "Earrings (Jhumkas)", purchaseDate: "2026-08-01", quantityAvailable: 10, price: 180 }]
-    : [{ itemName: "Bridal Necklace Set", itemCode: "RNS-099", category: "Imitation Jewellery", itemType: "Necklace Sets", dailyRate: 500, deposit: 3000, purchasedFrom: "Wholesale Vendor", purchaseDate: "2026-08-01", purchasePrice: 4000, warranty: "None", status: "available" }];
+    : [{ itemName: "Bridal Necklace Set", itemCode: "RNS-099", category: "Imitation Jewellery", itemType: "Necklace Sets", dailyRate: 500, deposit: 3000, purchasedFrom: "Wholesale Vendor", purchaseDate: "2026-08-01", purchasePrice: 4000, warranty: "None", status: "available", commissionType: "percentage", commissionValue: 10 }];
   LFS.downloadCSV(`${type}_bulk_template.csv`, rows);
 }
 
@@ -559,6 +585,8 @@ function runBulkUpload(type) {
         itemName: r.itemName, itemCode: r.itemCode, category: r.category || LFS_CATEGORIES[0], itemType: r.itemType || LFS_ITEM_TYPES[0],
         dailyRate: Number(r.dailyRate), deposit: Number(r.deposit), status: (r.status || "available").toLowerCase(),
         purchasedFrom: r.purchasedFrom || "", purchaseDate: r.purchaseDate || LFS.todayISO(), purchasePrice: Number(r.purchasePrice) || 0, warranty: r.warranty || "",
+        commissionType: ["none", "percentage", "flat"].includes(r.commissionType) ? r.commissionType : (idx >= 0 ? existing[idx].commissionType || "none" : "none"),
+        commissionValue: r.commissionValue !== undefined && r.commissionValue !== "" ? Number(r.commissionValue) || 0 : (idx >= 0 ? existing[idx].commissionValue || 0 : 0),
         imageDataUrl: idx >= 0 ? existing[idx].imageDataUrl : "",
         timesRented: idx >= 0 ? existing[idx].timesRented || 0 : 0, totalEarned: idx >= 0 ? existing[idx].totalEarned || 0 : 0
       };
@@ -596,8 +624,8 @@ function payrollFor(staff, monthStr) {
 function renderStaffModule() {
   return `
     <div class="subtab-nav" style="padding:0 0 12px;">
-      <button class="subtab-btn ${STAFF_SUBTAB === "profiles" ? "active" : ""}" data-subtab-group="staff" data-sub="profiles">Employee Profiles</button>
-      <button class="subtab-btn ${STAFF_SUBTAB === "attendance" ? "active" : ""}" data-subtab-group="staff" data-sub="attendance">Attendance &amp; Leave</button>
+      <button class="subtab-btn ${STAFF_SUBTAB === "profiles" ? "active" : ""}" data-subtab-group="staff" data-sub="profiles">🪪 Employee Profiles</button>
+      <button class="subtab-btn ${STAFF_SUBTAB === "attendance" ? "active" : ""}" data-subtab-group="staff" data-sub="attendance">🗓️ Attendance &amp; Leave</button>
     </div>
     ${STAFF_SUBTAB === "profiles" ? renderStaffProfiles() : renderStaffAttendance()}
   `;
@@ -608,7 +636,7 @@ function renderStaffProfiles() {
   const editing = EDIT_STAFF_ID ? staff.find(s => s.id === EDIT_STAFF_ID) : null;
   return `
     <div class="card">
-      <h2>${editing ? "Edit Employee" : "Add Employee"}</h2>
+      <h2>🪪 ${editing ? "Edit Employee" : "Add Employee"}</h2>
       <form id="staffForm">
         <input type="hidden" id="stfId" value="${editing ? editing.id : ""}">
         <div class="grid cols-2">
@@ -628,7 +656,7 @@ function renderStaffProfiles() {
       </form>
     </div>
     <div class="card">
-      <div class="flex-between"><h2 style="margin:0;">Employees (${staff.length})</h2>
+      <div class="flex-between"><h2 style="margin:0;">👥 Employees (${staff.length})</h2>
         <div class="flex gap-8">
           <button class="btn btn-outline btn-sm" onclick="printStaffReport()">Print</button>
           <button class="btn btn-outline btn-sm" onclick="downloadStaffPDF()">PDF</button>
@@ -698,7 +726,7 @@ function renderStaffAttendance() {
   const lastMonth = currentMonthStr(-1);
   return `
     <div class="card">
-      <h2>Log a Leave Day</h2>
+      <h2>🗓️ Log a Leave Day</h2>
       <form id="attendanceForm">
         <div class="grid cols-3">
           <div class="field"><label>Employee</label><select id="attStaff">${staff.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("")}</select></div>
@@ -709,7 +737,7 @@ function renderStaffAttendance() {
       </form>
     </div>
     <div class="card">
-      <div class="flex-between"><h2 style="margin:0;">Leave &amp; Salary Summary</h2>
+      <div class="flex-between"><h2 style="margin:0;">🗓️ Leave &amp; Salary Summary</h2>
         <div class="flex gap-8">
           <button class="btn btn-outline btn-sm" onclick="printAttendanceReport()">Print</button>
           <button class="btn btn-outline btn-sm" onclick="downloadAttendancePDF()">PDF</button>
@@ -779,9 +807,9 @@ function saveAttendance(e) {
 function renderExpensesModule() {
   return `
     <div class="subtab-nav" style="padding:0 0 12px;">
-      <button class="subtab-btn ${EXPENSE_SUBTAB === "log" ? "active" : ""}" data-subtab-group="expenses" data-sub="log">Log Store Monthly Expense</button>
-      <button class="subtab-btn ${EXPENSE_SUBTAB === "upcoming" ? "active" : ""}" data-subtab-group="expenses" data-sub="upcoming">Upcoming Expenses</button>
-      <button class="subtab-btn ${EXPENSE_SUBTAB === "trend" ? "active" : ""}" data-subtab-group="expenses" data-sub="trend">Past Expenses Trend</button>
+      <button class="subtab-btn ${EXPENSE_SUBTAB === "log" ? "active" : ""}" data-subtab-group="expenses" data-sub="log">📝 Log Store Monthly Expense</button>
+      <button class="subtab-btn ${EXPENSE_SUBTAB === "upcoming" ? "active" : ""}" data-subtab-group="expenses" data-sub="upcoming">⏳ Upcoming Expenses</button>
+      <button class="subtab-btn ${EXPENSE_SUBTAB === "trend" ? "active" : ""}" data-subtab-group="expenses" data-sub="trend">📉 Past Expenses Trend</button>
     </div>
     ${EXPENSE_SUBTAB === "log" ? renderExpenseLog() : EXPENSE_SUBTAB === "upcoming" ? renderUpcomingExpenses() : renderExpenseTrend()}
   `;
@@ -791,7 +819,7 @@ function renderExpenseLog() {
   const total = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
   return `
     <div class="card">
-      <h2>Log Expense</h2>
+      <h2>💵 Log Expense</h2>
       <form id="expenseForm">
         <div class="grid cols-3">
           <div class="field"><label>Category</label><select id="expCategory"><option>Rent</option><option>Electricity</option><option>Tax</option><option>Salaries</option><option>Maintenance</option><option>Daily Shop Expense</option><option>Others</option></select></div>
@@ -803,7 +831,7 @@ function renderExpenseLog() {
       </form>
     </div>
     <div class="card">
-      <div class="flex-between"><h2 style="margin:0;">Expense Log</h2>
+      <div class="flex-between"><h2 style="margin:0;">💵 Expense Log</h2>
         <div class="flex gap-8">
           <button class="btn btn-outline btn-sm" onclick="printExpensesReport()">Print</button>
           <button class="btn btn-outline btn-sm" onclick="downloadExpensesPDF()">PDF</button>
@@ -860,7 +888,7 @@ function renderUpcomingExpenses() {
   const recurringTotal = recurring.reduce((sum, e) => sum + Number(e.amount), 0);
   return `
     <div class="card">
-      <div class="flex-between"><h2 style="margin:0;">Upcoming Expenses - ${thisMonth}</h2>
+      <div class="flex-between"><h2 style="margin:0;">⏳ Upcoming Expenses - ${thisMonth}</h2>
         <div class="flex gap-8">
           <button class="btn btn-outline btn-sm" onclick="printUpcomingReport()">Print</button>
           <button class="btn btn-outline btn-sm" onclick="downloadUpcomingPDF()">PDF</button>
@@ -923,7 +951,7 @@ function renderExpenseTrend() {
   return `
     <div class="card">
       <div class="flex-between" style="flex-wrap:wrap;gap:10px;">
-        <h2 style="margin:0;">Past Expenses Trend</h2>
+        <h2 style="margin:0;">📉 Past Expenses Trend</h2>
         <div class="flex gap-8">
           <button class="btn ${EXPENSE_TREND_VIEW === "month" ? "btn-primary" : "btn-outline"} btn-sm" onclick="EXPENSE_TREND_VIEW='month';renderAdminModule();">By Month</button>
           <button class="btn ${EXPENSE_TREND_VIEW === "year" ? "btn-primary" : "btn-outline"} btn-sm" onclick="EXPENSE_TREND_VIEW='year';renderAdminModule();">By Year</button>
@@ -951,7 +979,7 @@ function renderExpenseMonthBreakdown() {
   const total = rows.reduce((s, e) => s + Number(e.amount || 0), 0);
   return `
     <div class="card">
-      <div class="flex-between"><h3 style="margin:0;">Expenses for ${EXPENSE_TREND_MONTH}</h3>
+      <div class="flex-between"><h3 style="margin:0;">📅 Expenses for ${EXPENSE_TREND_MONTH}</h3>
         <div class="stat-box" style="padding:8px 16px;"><div class="num" style="font-size:1.2rem;">${LFS.formatMoney(total)}</div><div class="lbl">Total</div></div>
       </div>
       <div class="table-wrap mt-16">
@@ -985,7 +1013,7 @@ function renderUsageModule() {
   const items = LFS.get("lfs_rental_items").slice().sort((a, b) => (b.timesRented || 0) - (a.timesRented || 0));
   return `
     <div class="card">
-      <div class="flex-between"><h2 style="margin:0;">Jewellery Usage &amp; Earnings</h2>
+      <div class="flex-between"><h2 style="margin:0;">📈 Jewellery Usage &amp; Earnings</h2>
         <div class="flex gap-8">
           <button class="btn btn-outline btn-sm" onclick="printUsageReport()">Print</button>
           <button class="btn btn-outline btn-sm" onclick="downloadUsagePDF()">PDF</button>
@@ -1034,9 +1062,22 @@ function renderSalesReportModule() {
   rentals.forEach(r => years.add(Number(r.rentalDate.slice(0, 4))));
   const yearOptions = Array.from(years).sort((a, b) => b - a).map(y => `<option ${y === SALES_CHART_YEAR ? "selected" : ""}>${y}</option>`).join("");
 
+  const referredRentals = rentals.filter(r => r.referred).slice().reverse();
+  const referralTotals = {
+    totalCommission: referredRentals.reduce((s, r) => s + Number(r.referralCommission || 0), 0),
+    count: referredRentals.length,
+    topReferrer: (() => {
+      const byReferrer = {};
+      referredRentals.forEach(r => { byReferrer[r.referrerName] = (byReferrer[r.referrerName] || 0) + Number(r.referralCommission || 0); });
+      const names = Object.keys(byReferrer);
+      if (!names.length) return "-";
+      return names.reduce((a, b) => byReferrer[a] >= byReferrer[b] ? a : b);
+    })()
+  };
+
   return `
     <div class="card">
-      <div class="flex-between"><h2 style="margin:0;">Overall Sales Overview</h2>
+      <div class="flex-between"><h2 style="margin:0;">📊 Overall Sales Overview</h2>
         <div class="flex gap-8">
           <button class="btn btn-outline btn-sm" onclick="printSalesOverviewReport()">Print Overview</button>
           <button class="btn btn-outline btn-sm" onclick="downloadOverviewPDF()">PDF</button>
@@ -1051,7 +1092,7 @@ function renderSalesReportModule() {
     </div>
 
     <div class="card">
-      <div class="flex-between"><h3 style="margin:0;">Sales Analytics</h3>
+      <div class="flex-between"><h3 style="margin:0;">📉 Sales Analytics</h3>
         <select id="chartYearSelect" style="width:110px;" onchange="SALES_CHART_YEAR=Number(this.value);initSalesCharts();">${yearOptions}</select>
       </div>
       <div class="grid cols-2 mt-16">
@@ -1063,7 +1104,32 @@ function renderSalesReportModule() {
     </div>
 
     <div class="card">
-      <div class="flex-between"><h3 style="margin:0;">Daily Sales</h3>
+      <div class="flex-between"><h3 style="margin:0;">🤝 Referral Program</h3></div>
+      <p class="text-soft">Rentals that came in through a referral, and the commission owed to each referrer.</p>
+      <div class="grid cols-3">
+        <div class="stat-box"><div class="num">${LFS.formatMoney(referralTotals.totalCommission)}</div><div class="lbl">Total Commission (all time)</div></div>
+        <div class="stat-box"><div class="num">${referralTotals.count}</div><div class="lbl">Referred Rentals</div></div>
+        <div class="stat-box"><div class="num" style="font-size:1.1rem;">${escapeHtml(referralTotals.topReferrer)}</div><div class="lbl">Top Referrer</div></div>
+      </div>
+      <div class="grid cols-2 mt-16">
+        <div class="chart-box"><h4>Top Referrers (by commission)</h4><canvas id="chartTopReferrers"></canvas></div>
+        <div class="chart-box"><h4>Commission by Month (${SALES_CHART_YEAR})</h4><canvas id="chartReferralMonthly"></canvas></div>
+      </div>
+      <div class="table-wrap mt-16">
+        <table>
+          <thead><tr><th>Date</th><th>Item</th><th>Customer</th><th>Referrer</th><th>Phone</th><th>Place</th><th>Commission</th></tr></thead>
+          <tbody>${referredRentals.map(r => `<tr><td>${r.rentalDate}</td><td>${escapeHtml(r.itemName)}</td><td>${escapeHtml(r.customerName)}</td><td>${escapeHtml(r.referrerName)}</td><td class="mono">${r.referrerPhone}</td><td>${escapeHtml(r.referrerPlace || "-")}</td><td>${LFS.formatMoney(r.referralCommission)}</td></tr>`).join("") || `<tr><td colspan="7" class="text-soft">No referred rentals yet.</td></tr>`}</tbody>
+        </table>
+      </div>
+      <div class="flex gap-8 mt-8">
+        <button class="btn btn-outline btn-sm" onclick="printReferralReport()">Print</button>
+        <button class="btn btn-outline btn-sm" onclick="downloadReferralPDF()">PDF</button>
+        <button class="btn btn-outline btn-sm" onclick="LFS.downloadCSV('referrals.csv', LFS.get('lfs_rentals').filter(r=>r.referred))">Export CSV</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="flex-between"><h3 style="margin:0;">🛍️ Daily Sales</h3>
         <div class="flex gap-8">
           <button class="btn btn-outline btn-sm" onclick="printDailySalesReport()">Print</button>
           <button class="btn btn-outline btn-sm" onclick="downloadDailySalesPDF()">PDF</button>
@@ -1078,7 +1144,7 @@ function renderSalesReportModule() {
       </div>
     </div>
     <div class="card">
-      <div class="flex-between"><h3 style="margin:0;">Rentals</h3>
+      <div class="flex-between"><h3 style="margin:0;">💍 Rentals</h3>
         <div class="flex gap-8">
           <button class="btn btn-outline btn-sm" onclick="printRentalsReport()">Print</button>
           <button class="btn btn-outline btn-sm" onclick="downloadRentalsPDF()">PDF</button>
@@ -1087,8 +1153,8 @@ function renderSalesReportModule() {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Date</th><th>Time (IST)</th><th>Item</th><th>Customer</th><th>Employee</th><th>Status</th><th>Total</th><th>Balance</th></tr></thead>
-          <tbody>${rentals.slice().reverse().slice(0, 50).map(r => `<tr><td>${r.rentalDate}</td><td>${LFS.formatIST(r.createdAt)}</td><td>${escapeHtml(r.itemName)}</td><td>${escapeHtml(r.customerName)}</td><td>${escapeHtml(r.handledBy || "-")}</td><td>${r.status}</td><td>${LFS.formatMoney(r.total)}</td><td>${LFS.formatMoney(r.balance)}</td></tr>`).join("") || `<tr><td colspan="8" class="text-soft">No rentals yet.</td></tr>`}</tbody>
+          <thead><tr><th>Date</th><th>Time (IST)</th><th>Item</th><th>Customer</th><th>Employee</th><th>Status</th><th>Referred By</th><th>Total</th><th>Balance</th></tr></thead>
+          <tbody>${rentals.slice().reverse().slice(0, 50).map(r => `<tr><td>${r.rentalDate}</td><td>${LFS.formatIST(r.createdAt)}</td><td>${escapeHtml(r.itemName)}</td><td>${escapeHtml(r.customerName)}</td><td>${escapeHtml(r.handledBy || "-")}</td><td>${r.status}</td><td>${r.referred ? `${escapeHtml(r.referrerName)} (${LFS.formatMoney(r.referralCommission)})` : "-"}</td><td>${LFS.formatMoney(r.total)}</td><td>${LFS.formatMoney(r.balance)}</td></tr>`).join("") || `<tr><td colspan="9" class="text-soft">No rentals yet.</td></tr>`}</tbody>
         </table>
 
       </div>
@@ -1150,6 +1216,28 @@ function initSalesCharts() {
     data: { labels: empLabels, datasets: [{ label: "Revenue (₹)", data: empLabels.map(l => empTotals[l]), backgroundColor: "#C9A24B" }] },
     options: { indexAxis: "y", plugins: { legend: { display: false } } }
   });
+
+  // --- Referral Program: top referrers by commission, and commission by month ---
+  const referred = rentals.filter(r => r.referred);
+  const referrerTotals = {};
+  referred.forEach(r => { referrerTotals[r.referrerName] = (referrerTotals[r.referrerName] || 0) + Number(r.referralCommission || 0); });
+  const referrerLabels = Object.keys(referrerTotals);
+  renderOrUpdateChart("chartTopReferrers", {
+    type: "bar",
+    data: { labels: referrerLabels, datasets: [{ label: "Commission (₹)", data: referrerLabels.map(l => referrerTotals[l]), backgroundColor: "#3E6259" }] },
+    options: { indexAxis: "y", plugins: { legend: { display: false } } }
+  });
+
+  const commissionMonthly = Array(12).fill(0);
+  referred.forEach(r => {
+    const d = new Date(r.rentalDate);
+    if (d.getFullYear() === SALES_CHART_YEAR) commissionMonthly[d.getMonth()] += Number(r.referralCommission || 0);
+  });
+  renderOrUpdateChart("chartReferralMonthly", {
+    type: "bar",
+    data: { labels: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], datasets: [{ label: "Commission (₹)", data: commissionMonthly, backgroundColor: "#B4483A" }] },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+  });
 }
 function renderOrUpdateChart(canvasId, config) {
   const ctx = document.getElementById(canvasId);
@@ -1191,16 +1279,36 @@ function downloadDailySalesPDF() {
   ]);
 }
 function rentalsRows() {
-  return LFS.get("lfs_rentals").slice().reverse().map(r => ({ date: r.rentalDate, time: LFS.formatIST(r.createdAt), item: r.itemName, customer: r.customerName, employee: r.handledBy || "-", status: r.status, total: LFS.formatMoney(r.total), balance: LFS.formatMoney(r.balance) }));
+  return LFS.get("lfs_rentals").slice().reverse().map(r => ({
+    date: r.rentalDate, time: LFS.formatIST(r.createdAt), item: r.itemName, customer: r.customerName, employee: r.handledBy || "-",
+    status: r.status, referredBy: r.referred ? r.referrerName : "-", total: LFS.formatMoney(r.total), balance: LFS.formatMoney(r.balance)
+  }));
 }
 function printRentalsReport() {
   LFS.printReport("Rentals Report", LFS.tableHtml(rentalsRows(), [
-    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "status", label: "Status" }, { key: "total", label: "Total" }, { key: "balance", label: "Balance" }
+    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "status", label: "Status" }, { key: "referredBy", label: "Referred By" }, { key: "total", label: "Total" }, { key: "balance", label: "Balance" }
   ]));
 }
 function downloadRentalsPDF() {
   LFS.downloadPDF("Rentals Report", rentalsRows(), [
-    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "status", label: "Status" }, { key: "total", label: "Total" }, { key: "balance", label: "Balance" }
+    { key: "date", label: "Date" }, { key: "time", label: "Time (IST)" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" }, { key: "employee", label: "Employee" }, { key: "status", label: "Status" }, { key: "referredBy", label: "Referred By" }, { key: "total", label: "Total" }, { key: "balance", label: "Balance" }
+  ]);
+}
+
+/* ---------- Referral Program report exports ---------- */
+function referralRows() {
+  return LFS.get("lfs_rentals").filter(r => r.referred).slice().reverse().map(r => ({
+    date: r.rentalDate, item: r.itemName, customer: r.customerName, referrer: r.referrerName, phone: r.referrerPhone, place: r.referrerPlace || "-", commission: LFS.formatMoney(r.referralCommission)
+  }));
+}
+function printReferralReport() {
+  LFS.printReport("Referral Commission Report", LFS.tableHtml(referralRows(), [
+    { key: "date", label: "Date" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" }, { key: "referrer", label: "Referrer" }, { key: "phone", label: "Phone" }, { key: "place", label: "Place" }, { key: "commission", label: "Commission" }
+  ]));
+}
+function downloadReferralPDF() {
+  LFS.downloadPDF("Referral Commission Report", referralRows(), [
+    { key: "date", label: "Date" }, { key: "item", label: "Item" }, { key: "customer", label: "Customer" }, { key: "referrer", label: "Referrer" }, { key: "phone", label: "Phone" }, { key: "place", label: "Place" }, { key: "commission", label: "Commission" }
   ]);
 }
 
@@ -1215,7 +1323,7 @@ function renderCustomersModule() {
   const yearOptions = Array.from(years).sort((a, b) => b - a).map(y => `<option ${y === CUSTOMER_CHART_YEAR ? "selected" : ""}>${y}</option>`).join("");
   return `
     <div class="card">
-      <h2>${editing ? "Edit Customer" : "Add Customer"}</h2>
+      <h2>🧑‍🤝‍🧑 ${editing ? "Edit Customer" : "Add Customer"}</h2>
       <form id="customerForm">
         <input type="hidden" id="cusId" value="${editing ? editing.id : ""}">
         <div class="grid cols-2">
@@ -1241,14 +1349,14 @@ function renderCustomersModule() {
     </div>
 
     <div class="card">
-      <div class="flex-between"><h3 style="margin:0;">New Customers Over Time</h3>
+      <div class="flex-between"><h3 style="margin:0;">📈 New Customers Over Time</h3>
         <select id="custYearPicker" style="width:110px;" onchange="CUSTOMER_CHART_YEAR=Number(this.value);initCustomerChart();">${yearOptions}</select>
       </div>
       <div class="chart-box mt-16"><canvas id="chartNewCustomers"></canvas></div>
     </div>
 
     <div class="card">
-      <div class="flex-between"><h2 style="margin:0;">Customers (${customers.length})</h2>
+      <div class="flex-between"><h2 style="margin:0;">🧑‍🤝‍🧑 Customers (${customers.length})</h2>
         <div class="flex gap-8">
           <button class="btn btn-outline btn-sm" onclick="printCustomersReport()">Print</button>
           <button class="btn btn-outline btn-sm" onclick="downloadCustomersPDF()">PDF</button>
@@ -1351,7 +1459,7 @@ function renderLoyaltyModule() {
   const r = l.redemption || { enabled: false, thresholdPoints: 50, valuePerPoint: 1 };
   return `
     <div class="card">
-      <h2>Loyalty Points &amp; Discount Rules</h2>
+      <h2>🎁 Loyalty Points &amp; Discount Rules</h2>
       <p class="text-soft">Looking for seasonal sales or celebration discounts? Those now live in the <strong>Promotions</strong> tab, where you can also scope them to specific categories.</p>
       <form id="loyaltyForm">
         <div class="grid cols-2">
@@ -1402,7 +1510,7 @@ function renderPromotionsModule() {
   const activeOne = promos.find(p => p.enabled);
   return `
     <div class="card">
-      <h2>Promotions &amp; Celebration Discounts</h2>
+      <h2>🎉 Promotions &amp; Celebration Discounts</h2>
       <p class="text-soft">Default public holidays and celebrations are listed below, all switched off until you enable them. You can also add your own custom promotions, and scope each one to Daily Sale and/or Rental items in specific categories. These automatically show up as a selectable discount in the Daily Sales and Rental POS screens on the matching date.</p>
       <p class="text-soft"><strong>Only one promotion can be active at a time.</strong> Enabling one automatically requires disabling any other first.</p>
       ${activeOne ? `<div class="success-note">Currently active: <strong>${escapeHtml(activeOne.name)}</strong> (${activeOne.discountPercent}% off)</div>` : ""}
@@ -1423,7 +1531,7 @@ function renderPromotionsModule() {
       </div>
     </div>
     <div class="card">
-      <h2>${editing ? "Edit Promotion" : "Add New Promotion"}</h2>
+      <h2>🎊 ${editing ? "Edit Promotion" : "Add New Promotion"}</h2>
       <form id="promoForm">
         <input type="hidden" id="promoId" value="${editing ? editing.id : ""}">
         <div class="grid cols-2">
@@ -1536,7 +1644,7 @@ function renderPersonalizationModule() {
   const s = LFS.get("lfs_settings");
   return `
     <div class="card">
-      <h2>Store Personalization</h2>
+      <h2>🏬 Store Personalization</h2>
       <form id="personalizationForm">
         <div class="grid cols-2">
           <div class="field"><label>Store Name</label><input type="text" id="pStoreName" value="${escapeHtml(s.storeName || "")}"></div>
@@ -1618,7 +1726,7 @@ function savePersonalization(e) {
 function renderSecurityModule() {
   return `
     <div class="card">
-      <h2>Security &amp; Passwords</h2>
+      <h2>🔐 Security &amp; Passwords</h2>
       <p class="text-soft">Both the Sales Person and Admin passwords can be reset here (defaults are <code>sales1111</code> and <code>admin111</code>). Everyone will need to re-enter the new password the next time they open a protected tab.</p>
       <form id="securityForm">
         <div class="field"><label>Current Admin Password *</label><input type="password" id="secCurrentAdmin" required></div>
@@ -1653,7 +1761,7 @@ function renderBackupModule() {
   const lastBackup = localStorage.getItem("lfs_last_backup") || "Never";
   return `
     <div class="card">
-      <h2>Auto Backup</h2>
+      <h2>☁️ Auto Backup</h2>
       <p class="text-soft">Automatically downloads a full backup JSON file to the device's Downloads folder at the configured interval. Save that file into your GitHub repo's <code>/data</code> folder workflow to restore it on next deploy.</p>
       <div class="field" style="max-width:220px;">
         <label>Auto-backup every (hours)</label>
@@ -1663,19 +1771,19 @@ function renderBackupModule() {
       <button class="btn btn-gold" onclick="LFS.exportFullBackup(); renderAdminModule();">Download Full Backup Now</button>
     </div>
     <div class="card">
-      <h2>Restore from Backup</h2>
+      <h2>♻️ Restore from Backup</h2>
       <p class="text-soft">Importing a full backup replaces all module data in this browser with the file's contents.</p>
       <input type="file" id="restoreInput" accept="application/json">
       <button class="btn btn-outline mt-8" onclick="restoreFullBackup()">Restore</button>
     </div>
     <div class="card">
-      <h2>Per-Module Export (for GitHub Pages seed data)</h2>
+      <h2>📤 Per-Module Export (for GitHub Pages seed data)</h2>
       <div class="grid cols-3">
         ${Object.keys(LFS.SEED_MAP).map(k => `<button class="btn btn-outline btn-sm" onclick="LFS.exportModule('${k}')">${LFS.SEED_MAP[k]}</button>`).join("")}
       </div>
     </div>
     <div class="card">
-      <h2>CSV Export (for external billing / GST filing)</h2>
+      <h2>📄 CSV Export (for external billing / GST filing)</h2>
       <div class="grid cols-3">
         <button class="btn btn-outline btn-sm" onclick="LFS.downloadCSV('sales.csv', LFS.get('lfs_sales'))">Sales CSV</button>
         <button class="btn btn-outline btn-sm" onclick="LFS.downloadCSV('rentals.csv', LFS.get('lfs_rentals'))">Rentals CSV</button>

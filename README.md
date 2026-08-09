@@ -1,6 +1,27 @@
 # Lakshmi Fancy Store - Store Management SPA
 
-## Latest updates (2026-08-12)
+## Latest updates (2026-08-13)
+
+- **Referral program**: Rental POS now has a "Referred By" toggle - when yes,
+  it captures the referrer's name, phone, and place, and computes a
+  commission live from the rental item's commission settings.
+- **Referral commission** is configured per rental item in Admin > Rental
+  Inventory (percentage of the rental charge, or a flat ₹ amount) - shown in
+  the master data table and included in bulk CSV/Excel upload.
+- **Admin > Sales Report** now has a Referral Program section: total
+  commission, referred-rental count, top referrer, a "top referrers by
+  commission" chart, a "commission by month" chart, and a full table with
+  Print/PDF/CSV export. The main Rentals table/report also shows who
+  referred each booking.
+- **Icons** added across every admin and sales-app nav tab, sub-tab, and
+  major section heading.
+- **Admin header logo bug fixed**: the admin console was hardcoded to a
+  static "A" placeholder and never actually rendered the uploaded store
+  logo - it now does.
+- **Footer added** to both apps: social media links (built from a full URL
+  or just a handle), contact info, GST number, and copyright.
+
+## Previous updates (2026-08-12)
 
 - **Promotions** are now scoped to Daily Sale and/or Rental, and to specific
   item categories (like Shopify/Square/WooCommerce "automatic discount"

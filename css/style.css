@@ -315,3 +315,28 @@ details.help-panel code{background:#fff;padding:1px 5px;border-radius:4px;border
 .image-pick-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
 .image-pick-preview{width:56px;height:56px;border-radius:8px;overflow:hidden;background:var(--ivory-dim);display:flex;align-items:center;justify-content:center;border:1px solid var(--border);}
 .image-pick-preview img{width:100%;height:100%;object-fit:cover;}
+
+/* ---------- referral program ---------- */
+.referral-row{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+.referral-row:last-child{border-bottom:none;}
+
+/* ---------- site footer ---------- */
+.site-footer{
+  background:linear-gradient(135deg,var(--maroon-dark) 0%,var(--maroon) 100%);
+  color:var(--ivory);
+  margin-top:24px;
+  padding:22px 18px 90px;
+  text-align:center;
+}
+@media (min-width:641px){ .site-footer{padding-bottom:22px;} }
+.site-footer-inner{max-width:640px;margin:0 auto;}
+.footer-store{font-family:'Playfair Display',serif;font-size:1.05rem;margin-bottom:6px;}
+.footer-store .text-soft{color:var(--gold-light) !important;}
+.footer-contact{font-size:.82rem;color:var(--gold-light);margin-bottom:10px;}
+.footer-social{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:10px;}
+.footer-social a{color:var(--ivory);text-decoration:none;font-size:.85rem;border:1px solid rgba(255,255,255,.35);padding:5px 12px;border-radius:16px;}
+.footer-social a:hover{background:rgba(255,255,255,.12);}
+.footer-copy{font-size:.72rem;color:rgba(255,255,255,.65);}
+
+/* ---------- nav icon spacing ---------- */
+.tab-btn .nav-icon, .subtab-btn .nav-icon{margin-right:4px;}

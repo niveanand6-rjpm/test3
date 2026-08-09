@@ -34,6 +34,7 @@ function paintHeader() {
   if (nameSlot) nameSlot.textContent = s.storeName || "Lakshmi Fancy Store";
   const subSlot = document.getElementById("storeSubSlot");
   if (subSlot) subSlot.textContent = s.branch || "";
+  LFS.paintFooter("siteFooter");
 }
 
 function paintEmployeeSelect() {
@@ -142,7 +143,7 @@ function renderDailySales() {
 
   return `
     <div class="card">
-      <h2>Daily Sales Entry</h2>
+      <h2>🛍️ Daily Sales Entry</h2>
       <p class="text-soft">Quick sale of small fancy items from current stock.</p>
       ${promo ? `<div class="success-note">🎉 ${escapeHtml(promo.name)} promotion is live today - ${promo.discountPercent}% off (${describePromoScopeShort(promo)}).</div>` : ""}
       <form id="dailySaleForm">
@@ -201,7 +202,7 @@ function renderDailySales() {
       </form>
     </div>
     <div class="card">
-      <div class="flex-between"><h3 style="margin:0;">Recent Sales</h3><button class="btn btn-outline btn-sm" onclick="printDailySalesReportSales()">Print All</button></div>
+      <div class="flex-between"><h3 style="margin:0;">🧾 Recent Sales</h3><button class="btn btn-outline btn-sm" onclick="printDailySalesReportSales()">Print All</button></div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Date</th><th>Time (IST)</th><th>Item</th><th>Qty</th><th>Customer</th><th>Payment</th><th>Total</th><th></th></tr></thead>
@@ -436,9 +437,9 @@ function submitDailySale(e) {
 function renderRentalTab() {
   return `
     <div class="subtab-nav" style="padding:0 0 12px;">
-      <button class="subtab-btn ${CURRENT_RENTAL_SUBTAB === "new" ? "active" : ""}" data-sub="new">New Rental</button>
-      <button class="subtab-btn ${CURRENT_RENTAL_SUBTAB === "historic" ? "active" : ""}" data-sub="historic">Historic / Returns</button>
-      <button class="subtab-btn ${CURRENT_RENTAL_SUBTAB === "requests" ? "active" : ""}" data-sub="requests">Customer Requirements</button>
+      <button class="subtab-btn ${CURRENT_RENTAL_SUBTAB === "new" ? "active" : ""}" data-sub="new">➕ New Rental</button>
+      <button class="subtab-btn ${CURRENT_RENTAL_SUBTAB === "historic" ? "active" : ""}" data-sub="historic">🔄 Historic / Returns</button>
+      <button class="subtab-btn ${CURRENT_RENTAL_SUBTAB === "requests" ? "active" : ""}" data-sub="requests">💬 Customer Requirements</button>
     </div>
     <div id="rentalSubContent">
       ${CURRENT_RENTAL_SUBTAB === "new" ? renderNewRental() : CURRENT_RENTAL_SUBTAB === "historic" ? renderHistoricRentals() : renderCustomerRequests()}
@@ -454,7 +455,7 @@ function renderNewRental() {
   const promo = LFS.activePromotionToday();
   return `
     <div class="card">
-      <h2>New Rental - POS Terminal</h2>
+      <h2>💳 New Rental - POS Terminal</h2>
       ${promo ? `<div class="success-note">🎉 ${escapeHtml(promo.name)} promotion is live today - ${promo.discountPercent}% off (${describePromoScopeShort(promo)}).</div>` : ""}
       <form id="rentalForm">
         <div class="grid cols-2">
@@ -550,7 +551,23 @@ function renderNewRental() {
           <label>Balance Pending</label>
           <input type="text" id="rnBalance" readonly>
         </div>
-        <div class="flex gap-8">
+        <h3 class="mt-16">🤝 Referred By</h3>
+        <div class="field" style="max-width:280px;">
+          <label>Was this customer referred by someone?</label>
+          <select id="rnReferredYesNo" onchange="onReferredToggle()">
+            <option value="no">No</option>
+            <option value="yes">Yes</option>
+          </select>
+        </div>
+        <div id="rnReferralFields" class="hidden">
+          <div class="grid cols-3">
+            <div class="field"><label>Referrer Name *</label><input type="text" id="rnReferrerName"></div>
+            <div class="field"><label>Referrer Phone *</label><input type="tel" id="rnReferrerPhone" maxlength="10"></div>
+            <div class="field"><label>Referrer Place / Address</label><input type="text" id="rnReferrerPlace"></div>
+          </div>
+          <div id="rnCommissionPreview" class="text-soft"></div>
+        </div>
+        <div class="flex gap-8 mt-8">
           <button class="btn btn-primary" type="submit">Save Rental &amp; Print Receipt</button>
         </div>
       </form>
@@ -572,6 +589,31 @@ function lookupRentalCustomer() {
     }
   }
   recalcRental();
+}
+
+function onReferredToggle() {
+  const isYes = document.getElementById("rnReferredYesNo").value === "yes";
+  document.getElementById("rnReferralFields").classList.toggle("hidden", !isYes);
+  updateCommissionPreview();
+}
+
+function computeCommission(item, basis) {
+  if (!item || !item.commissionType || item.commissionType === "none") return 0;
+  if (item.commissionType === "percentage") return Math.round(basis * (Number(item.commissionValue) || 0) / 100);
+  return Number(item.commissionValue) || 0;
+}
+
+function updateCommissionPreview() {
+  const slot = document.getElementById("rnCommissionPreview");
+  if (!slot) return;
+  const isYes = document.getElementById("rnReferredYesNo").value === "yes";
+  if (!isYes || !SELECTED_RENTAL_ITEM) { slot.textContent = ""; return; }
+  const days = Math.max(1, Number(document.getElementById("rnDays").value) || 1);
+  const rate = Number(document.getElementById("rnRate").value) || 0;
+  const commission = computeCommission(SELECTED_RENTAL_ITEM, rate * days);
+  slot.textContent = commission > 0
+    ? `Referral commission for this rental: ${LFS.formatMoney(commission)}`
+    : "This item has no referral commission configured (set it in Admin > Rental Inventory).";
 }
 
 function onRentalItemChange() {
@@ -602,6 +644,7 @@ function recalcRental() {
   let discount = Number(document.getElementById("rnDiscount").value) || 0;
 
   refreshRentalDiscountBlock();
+  updateCommissionPreview();
 
   const returnDate = new Date(date);
   returnDate.setDate(returnDate.getDate() + days);
@@ -669,6 +712,17 @@ function submitRental(e) {
   const address = document.getElementById("rnAddress").value.trim();
   const region = document.getElementById("rnRegion").value;
 
+  const referred = document.getElementById("rnReferredYesNo").value === "yes";
+  let referrerName = "", referrerPhone = "", referrerPlace = "", referralCommission = 0;
+  if (referred) {
+    referrerName = document.getElementById("rnReferrerName").value.trim();
+    referrerPhone = document.getElementById("rnReferrerPhone").value.trim();
+    referrerPlace = document.getElementById("rnReferrerPlace").value.trim();
+    if (!referrerName) { toast("Please enter the referrer's name"); return; }
+    if (!LFS.isValidPhone(referrerPhone)) { toast("Please enter a valid 10-digit referrer phone number"); return; }
+    referralCommission = computeCommission(item, rate * days);
+  }
+
   const customers = LFS.get("lfs_customers");
   let cust = customers.find(c => c.phone === phone);
   if (!cust) {
@@ -700,7 +754,11 @@ function submitRental(e) {
     expectedReturnDate: returnDate.toISOString().slice(0, 10),
     actualReturnDate: "",
     days, dailyRate: rate, deposit, discount, advancePaid: advance, advancePaymentMode: advanceMode,
-    total, balance, status: "active", handledBy: employee, settlementPaymentMode: ""
+    total, balance, status: "active", handledBy: employee, settlementPaymentMode: "",
+    referred, referrerName, referrerPhone, referrerPlace,
+    commissionType: referred ? (item.commissionType || "none") : "none",
+    commissionValue: referred ? (item.commissionValue || 0) : 0,
+    referralCommission
   };
   rentals.push(record);
   LFS.set("lfs_rentals", rentals);
@@ -745,7 +803,7 @@ function renderHistoricRentals() {
   const past = rentals.filter(r => r.status !== "active");
   return `
     <div class="card">
-      <div class="flex-between"><h2 style="margin:0;">Active Rentals</h2><button class="btn btn-outline btn-sm" onclick="printRentalsReportSales()">Print All</button></div>
+      <div class="flex-between"><h2 style="margin:0;">⏱️ Active Rentals</h2><button class="btn btn-outline btn-sm" onclick="printRentalsReportSales()">Print All</button></div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Item</th><th>Customer</th><th>Rented</th><th>Time (IST)</th><th>Due</th><th>Balance</th><th>Settle Via</th><th></th></tr></thead>
@@ -769,7 +827,7 @@ function renderHistoricRentals() {
       </div>
     </div>
     <div class="card">
-      <h2>Rental History</h2>
+      <h2>📜 Rental History</h2>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Item</th><th>Customer</th><th>Rented</th><th>Time (IST)</th><th>Returned</th><th>Total</th><th></th></tr></thead>
@@ -842,7 +900,7 @@ function renderCustomerRequests() {
   const reqs = LFS.get("lfs_customer_requests").slice().reverse();
   return `
     <div class="card">
-      <h2>Log Customer Requirement / Comment</h2>
+      <h2>💬 Log Customer Requirement / Comment</h2>
       <form id="reqForm">
         <div class="grid cols-2">
           <div class="field">
@@ -862,7 +920,7 @@ function renderCustomerRequests() {
       </form>
     </div>
     <div class="card">
-      <h3>Recent Customer Notes</h3>
+      <h3>📝 Recent Customer Notes</h3>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Date</th><th>Time (IST)</th><th>Customer</th><th>Comment</th></tr></thead>
@@ -902,7 +960,7 @@ function renderDailyExpenses() {
   const mine = LFS.get("lfs_expenses").filter(e => e.source === "sales_person" && e.date === today).slice().reverse();
   return `
     <div class="card">
-      <h2>Log Daily Shop Expense</h2>
+      <h2>💵 Log Daily Shop Expense</h2>
       <p class="text-soft">Small day-to-day expenses (e.g. cleaning supplies, packaging, tea/snacks for staff). These appear in Admin &gt; Expenses &gt; Log Store Monthly Expense automatically.</p>
       <form id="dailyExpenseForm">
         <div class="grid cols-2">
@@ -926,7 +984,7 @@ function renderDailyExpenses() {
       </form>
     </div>
     <div class="card">
-      <h3>Logged Today</h3>
+      <h3>📅 Logged Today</h3>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Time (IST)</th><th>Employee</th><th>Description</th><th>Amount</th></tr></thead>
@@ -973,7 +1031,7 @@ function renderCatalog() {
   return `
     <div class="card">
       <div class="flex-between" style="flex-wrap:wrap;gap:10px;">
-        <h2 style="margin:0;">Jewellery Status &amp; Catalog</h2>
+        <h2 style="margin:0;">📋 Jewellery Status &amp; Catalog</h2>
         <div class="flex gap-8" style="flex-wrap:wrap;">
           <input type="text" placeholder="Search item or code" style="width:180px;" value="${CATALOG_FILTER.search}" oninput="setCatalogFilter('search', this.value)">
           <select style="width:170px;" onchange="setCatalogFilter('category', this.value)">
