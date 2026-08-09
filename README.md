@@ -1,6 +1,28 @@
 # Lakshmi Fancy Store - Store Management SPA (v15)
 
-## Latest updates (2026-08-23)
+## Latest updates (2026-08-24) - Gallery hero "celebration" effects
+
+- **Wedding fairy lights**: a row of warm gold/blush/ivory bulbs twinkling
+  out of sync along the top edge of the hero, like a string of party
+  lights.
+- **Firework/cracker bursts**: short-lived radial particle bursts spawn at
+  random spots in the hero every few seconds, then clean themselves up -
+  built with only `rotate`/`translateY`/`opacity` (no `background-position`
+  animation, the one that silently broke on iOS Safari earlier in this
+  project).
+- **Drifting occasion emoji**: rings, brides, crackers, bouquets, and baby
+  bottles rise gently from the bottom of the hero and fade out, reinforcing
+  "we're for every celebration" - engagement, wedding, baby shower, and
+  beyond.
+- **Spinning ring badge** either side of the tagline, plus a new "For
+  Weddings · Engagements · Baby Showers · Every Celebration" line.
+- All of it respects `prefers-reduced-motion` - the continuous
+  fireworks/emoji loops don't start for anyone with that accessibility
+  setting on, and the CSS twinkle/pulse animations are disabled too.
+- Decorations now only spawn once the gallery is actually unlocked and
+  visible, instead of running invisibly behind the password gate.
+
+## Previous updates (2026-08-23)
 
 - **Gallery gets the "stale cached password" fix too.** Added the same
   "Trouble logging in? / Password not working?" reset link to

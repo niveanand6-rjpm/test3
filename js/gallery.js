@@ -11,7 +11,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   await LFS.init();
   LFS.applyTheme();
   paintGalleryBrand();
-  spawnSparkles();
   if (LFS.isAuthed("lfs_auth_gallery")) {
     showGalleryScreen();
   } else {
@@ -20,6 +19,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const form = document.getElementById("galleryLoginForm");
   if (form) form.addEventListener("submit", attemptGalleryUnlock);
 });
+
+const REDUCE_MOTION = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function spawnSparkles() {
   const holder = document.getElementById("heroSparkles");
@@ -34,6 +35,79 @@ function spawnSparkles() {
     html += `<span class="sparkle" style="top:${top}%;left:${left}%;animation-delay:${delay}s;width:${size}px;height:${size}px;"></span>`;
   }
   holder.innerHTML = html;
+}
+
+// A row of "wedding string lights" along the top of the hero - warm gold,
+// blush pink, and ivory bulbs twinkling out of sync with each other.
+function spawnLightStrand() {
+  const holder = document.getElementById("lightStrand");
+  if (!holder) return;
+  const colors = ["#F4D06F", "#F2A6A6", "#FFF6E0", "#E8D6A0", "#F7C6D9"];
+  const count = 16;
+  let html = "";
+  for (let i = 0; i < count; i++) {
+    const color = colors[i % colors.length];
+    const delay = (Math.random() * 1.8).toFixed(2);
+    const dur = (1.4 + Math.random() * 0.8).toFixed(2);
+    html += `<span class="bulb" style="background:${color};color:${color};animation-delay:${delay}s;animation-duration:${dur}s;"></span>`;
+  }
+  holder.innerHTML = html;
+}
+
+// Firework/cracker bursts - spawns a short-lived burst of particles at a
+// random spot in the hero every few seconds, then removes itself. Uses
+// only rotate+translateY+opacity (no background-position), same
+// GPU-safe approach used everywhere else in this app.
+function spawnOneFirework() {
+  const hero = document.getElementById("galleryHero");
+  if (!hero) return;
+  const colors = ["#C9A24B", "#F2A6A6", "#FFF6E0", "#8EC6B8", "#E8D6A0"];
+  const color = colors[Math.floor(Math.random() * colors.length)];
+  const top = 8 + Math.random() * 45;
+  const left = 8 + Math.random() * 84;
+  const particleCount = 10 + Math.floor(Math.random() * 5);
+  const wrap = document.createElement("div");
+  wrap.className = "firework";
+  wrap.style.top = top + "%";
+  wrap.style.left = left + "%";
+  let spans = "";
+  for (let i = 0; i < particleCount; i++) {
+    const angle = Math.round((360 / particleCount) * i);
+    spans += `<span style="--angle:${angle}deg;background:${color};box-shadow:0 0 6px 1px ${color};"></span>`;
+  }
+  wrap.innerHTML = spans;
+  hero.appendChild(wrap);
+  setTimeout(() => wrap.remove(), 1300);
+}
+function startFireworksLoop() {
+  if (REDUCE_MOTION) return;
+  spawnOneFirework();
+  setInterval(spawnOneFirework, 2600 + Math.random() * 1200);
+}
+
+// Drifting occasion emoji - rings, brides, celebration crackers, baby
+// showers, bouquets - rise gently from the bottom of the hero and fade,
+// like confetti in slow motion. Reinforces "we're for every celebration".
+const CELEBRATION_EMOJI = ["💍", "👰", "🎊", "🎉", "🍼", "🎀", "💐", "✨", "👶", "🕊️"];
+function spawnOneFloatingEmoji() {
+  const holder = document.getElementById("heroEmojiLayer");
+  if (!holder) return;
+  const el = document.createElement("span");
+  el.className = "floating-emoji";
+  el.textContent = CELEBRATION_EMOJI[Math.floor(Math.random() * CELEBRATION_EMOJI.length)];
+  const left = 4 + Math.random() * 90;
+  const drift = Math.round((Math.random() - 0.5) * 70);
+  const duration = 5.5 + Math.random() * 3;
+  el.style.left = left + "%";
+  el.style.setProperty("--drift", drift + "px");
+  el.style.animationDuration = duration.toFixed(2) + "s";
+  holder.appendChild(el);
+  setTimeout(() => el.remove(), duration * 1000 + 200);
+}
+function startFloatingEmojiLoop() {
+  if (REDUCE_MOTION) return;
+  spawnOneFloatingEmoji();
+  setInterval(spawnOneFloatingEmoji, 1400 + Math.random() * 900);
 }
 
 function paintGalleryBrand() {
@@ -56,6 +130,10 @@ function showGalleryGate() {
 function showGalleryScreen() {
   document.getElementById("galleryGate").classList.add("hidden");
   document.getElementById("galleryScreen").classList.remove("hidden");
+  spawnSparkles();
+  spawnLightStrand();
+  startFireworksLoop();
+  startFloatingEmojiLoop();
   LFS.paintFooter("galleryFooter");
   LFS.initGoTop("goTopBtn");
   populateCategoryOptions();
