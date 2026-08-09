@@ -430,6 +430,26 @@ const LFS = (() => {
   }
   function nowISO() { return new Date().toISOString(); }
 
+  /* ---------- Go to Top button ----------
+     Shows a floating right-side button once the user has scrolled past the
+     halfway point of the page, and scrolls smoothly back to top on click.
+  */
+  function initGoTop(btnId) {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    const onScroll = () => {
+      const scrollable = document.body.scrollHeight - window.innerHeight;
+      if (scrollable < 200) { btn.classList.remove("visible"); return; }
+      const halfway = scrollable / 2;
+      if (window.scrollY > halfway) btn.classList.add("visible");
+      else btn.classList.remove("visible");
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll, { passive: true });
+    onScroll();
+  }
+  function scrollToTop() { window.scrollTo({ top: 0, behavior: "smooth" }); }
+
   /* ---------- social link normalization ----------
      Admin can type a full URL or just a handle (e.g. "@lakshmifancystore")
      - this builds a sensible clickable link either way.
@@ -484,7 +504,7 @@ const LFS = (() => {
     downloadPDF, printReport, tableHtml,
     isValidPhone, isValidEmail, isValidAmount,
     checkPassword, isAuthed, setAuthed, logout, resetAppData,
-    formatMoney, todayISO, daysBetween, formatIST, nowISO, normalizeSocialUrl, paintFooter,
+    formatMoney, todayISO, daysBetween, formatIST, nowISO, normalizeSocialUrl, paintFooter, initGoTop, scrollToTop,
     currentEmployeeName, setCurrentEmployeeName,
     activePromotionToday, promotionAppliesTo, anyOtherPromotionEnabled,
     PAYMENT_MODES, REFERRAL_SOURCES
@@ -503,7 +523,7 @@ const LFS_EVENT_TYPES = ["Marriage","Baby Shower","Reception","Engagement","Nami
 /* Build marker - open DevTools Console on any device and check this value
    against the version query string on index.html/admin.html's <script> tags
    to confirm the browser isn't showing a stale cached copy of the app. */
-const LFS_BUILD_VERSION = "2026-08-14";
+const LFS_BUILD_VERSION = "2026-08-15";
 console.info("Lakshmi Fancy Store build:", LFS_BUILD_VERSION);
 
 /* Shared recovery action wired to the "Trouble logging in?" link on both

@@ -13,6 +13,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   LFS.scheduleAutoBackup();
   paintHeader();
   paintEmployeeSelect();
+  LFS.initGoTop("goTopBtn");
   if (LFS.isAuthed("lfs_auth_sales")) {
     showApp();
   } else {
@@ -156,7 +157,7 @@ function renderDailySales() {
     <div class="card">
       <h2>🛍️ Daily Sales Entry</h2>
       <p class="text-soft">Quick sale of small fancy items from current stock.</p>
-      ${promo ? `<div class="promo-banner">🎉 ${escapeHtml(promo.name)} promotion is LIVE today - ${promo.discountPercent}% off (${describePromoScopeShort(promo)}). Let every customer know!</div>` : ""}
+      ${promo ? `<div class="promo-banner"><span class="promo-emoji">🎉</span> ${escapeHtml(promo.name)} promotion is LIVE today - ${promo.discountPercent}% off (${describePromoScopeShort(promo)}). Let every customer know!</div>` : ""}
       <form id="dailySaleForm">
         <div class="grid cols-2">
           <div class="field">
@@ -474,7 +475,7 @@ function renderNewRental() {
   return `
     <div class="card">
       <h2>💳 New Rental - POS Terminal</h2>
-      ${promo ? `<div class="promo-banner">🎉 ${escapeHtml(promo.name)} promotion is LIVE today - ${promo.discountPercent}% off (${describePromoScopeShort(promo)}). Let every customer know!</div>` : ""}
+      ${promo ? `<div class="promo-banner"><span class="promo-emoji">🎉</span> ${escapeHtml(promo.name)} promotion is LIVE today - ${promo.discountPercent}% off (${describePromoScopeShort(promo)}). Let every customer know!</div>` : ""}
       <form id="rentalForm">
         <div class="grid cols-2">
           <div class="field">

@@ -1,6 +1,24 @@
 # Lakshmi Fancy Store - Store Management SPA
 
-## Latest updates (2026-08-14)
+## Latest updates (2026-08-15)
+
+- **Sales Report split into 5 sub-tabs**: Overview (numbers only - year/
+  month/today revenue, cash & GPay totals, repeat customers, commission
+  paid, referral revenue, pending balances - for a quick management
+  glance), Sales Analytics (6 charts: monthly trend, 30-day daily trend,
+  best categories, payment split, revenue by employee, new-vs-repeat
+  customers), Referral Program, Daily Sales (+ top-selling-items chart),
+  and Rentals (+ status breakdown & revenue-by-event-type charts). Every
+  sub-tab has its own Print/PDF/CSV where applicable.
+- **Promotion banners are more eye-catching**: shimmering gold gradient,
+  pulsing glow, and a bouncing emoji - shown in Admin > Promotions (on the
+  active row and a top banner) and on both the Daily Sales and Rental POS
+  screens.
+- **Go to Top button**: a floating button on the right side of every page,
+  appears once you've scrolled past halfway down the page, scrolls smoothly
+  back to the top on click.
+
+## Previous updates (2026-08-14)
 
 - **Fixed per-sale/per-rental "Print" bug**: the individual receipt print
   buttons (Recent Sales, Active Rentals, Rental History) relied on an

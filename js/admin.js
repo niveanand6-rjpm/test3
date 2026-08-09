@@ -15,11 +15,13 @@ let RENTAL_PICKED_IMAGE = null;
 let IMAGE_PICKER_CONTEXT = null; // 'stock' | 'rental'
 let CHART_REFS = {};
 let SALES_CHART_YEAR = new Date().getFullYear();
+let SALES_REPORT_SUBTAB = "overview";
 
 document.addEventListener("DOMContentLoaded", async () => {
   await LFS.init();
   LFS.scheduleAutoBackup();
   paintAdminHeader();
+  LFS.initGoTop("goTopBtn");
   if (LFS.isAuthed("lfs_auth_admin")) showAdminApp(); else showAdminLogin();
 });
 
@@ -85,7 +87,7 @@ const ADMIN_RENDERERS = {
 function renderAdminModule() {
   document.getElementById("adminMain").innerHTML = ADMIN_RENDERERS[ADMIN_MODULE]();
   wireAdminEvents();
-  if (ADMIN_MODULE === "salesReport") setTimeout(initSalesCharts, 0);
+  if (ADMIN_MODULE === "salesReport") setTimeout(initSalesReportCharts, 0);
   if (ADMIN_MODULE === "expenses" && EXPENSE_SUBTAB === "trend") setTimeout(initExpenseTrendChart, 0);
   if (ADMIN_MODULE === "customers") setTimeout(initCustomerChart, 0);
 }
@@ -96,6 +98,7 @@ function wireAdminEvents() {
       const group = b.dataset.subtabGroup;
       if (group === "staff") STAFF_SUBTAB = b.dataset.sub;
       if (group === "expenses") EXPENSE_SUBTAB = b.dataset.sub;
+      if (group === "salesReport") SALES_REPORT_SUBTAB = b.dataset.sub;
       renderAdminModule();
     });
   });
@@ -1051,17 +1054,175 @@ function downloadUsagePDF() {
    OVERALL SALES REPORT + ANALYTICS
    ============================================================ */
 function renderSalesReportModule() {
+  return `
+    <div class="subtab-nav" style="padding:0 0 12px;">
+      <button class="subtab-btn ${SALES_REPORT_SUBTAB === "overview" ? "active" : ""}" data-subtab-group="salesReport" data-sub="overview">📊 Overview</button>
+      <button class="subtab-btn ${SALES_REPORT_SUBTAB === "analytics" ? "active" : ""}" data-subtab-group="salesReport" data-sub="analytics">📉 Sales Analytics</button>
+      <button class="subtab-btn ${SALES_REPORT_SUBTAB === "referral" ? "active" : ""}" data-subtab-group="salesReport" data-sub="referral">🤝 Referral Program</button>
+      <button class="subtab-btn ${SALES_REPORT_SUBTAB === "dailySales" ? "active" : ""}" data-subtab-group="salesReport" data-sub="dailySales">🛍️ Daily Sales</button>
+      <button class="subtab-btn ${SALES_REPORT_SUBTAB === "rentals" ? "active" : ""}" data-subtab-group="salesReport" data-sub="rentals">💍 Rentals</button>
+    </div>
+    ${SALES_REPORT_SUBTAB === "overview" ? renderSROverview()
+      : SALES_REPORT_SUBTAB === "analytics" ? renderSRAnalytics()
+      : SALES_REPORT_SUBTAB === "referral" ? renderSRReferral()
+      : SALES_REPORT_SUBTAB === "dailySales" ? renderSRDailySales()
+      : renderSRRentals()}
+  `;
+}
+
+/* ---------- 1. Overview: numbers only, for management at a glance ---------- */
+function renderSROverview() {
   const sales = LFS.get("lfs_sales");
   const rentals = LFS.get("lfs_rentals");
-  const salesTotal = sales.reduce((s, x) => s + Number(x.total || 0), 0);
-  const rentalTotal = rentals.reduce((s, x) => s + Number(x.total || 0), 0);
-  const pendingBalance = rentals.filter(r => r.status === "active").reduce((s, x) => s + Number(x.balance || 0), 0);
+  const customers = LFS.get("lfs_customers");
+  const today = LFS.todayISO();
+  const thisMonth = currentMonthStr(0);
+  const thisYear = String(new Date().getFullYear());
 
+  const sumTotal = arr => arr.reduce((s, x) => s + Number(x.total || 0), 0);
+  const salesToday = sales.filter(s => s.date === today);
+  const rentalsToday = rentals.filter(r => r.rentalDate === today);
+  const salesMonth = sales.filter(s => s.date.slice(0, 7) === thisMonth);
+  const rentalsMonth = rentals.filter(r => r.rentalDate.slice(0, 7) === thisMonth);
+  const salesYear = sales.filter(s => s.date.slice(0, 4) === thisYear);
+  const rentalsYear = rentals.filter(r => r.rentalDate.slice(0, 4) === thisYear);
+
+  const paymentTotal = (mode) => {
+    let t = sales.filter(s => s.paymentMode === mode).reduce((s, x) => s + Number(x.total || 0), 0);
+    t += rentals.filter(r => r.advancePaymentMode === mode).reduce((s, x) => s + Number(x.advancePaid || 0), 0);
+    t += rentals.filter(r => r.status !== "active" && r.settlementPaymentMode === mode).reduce((s, x) => s + Math.max(0, Number(x.balance || 0)), 0);
+    return t;
+  };
+  const cashTotal = paymentTotal("Cash");
+  const gpayTotal = paymentTotal("GPay");
+  const otherDigitalTotal = LFS.PAYMENT_MODES.filter(m => m !== "Cash" && m !== "GPay").reduce((s, m) => s + paymentTotal(m), 0);
+
+  const pendingBalance = rentals.filter(r => r.status === "active").reduce((s, x) => s + Number(x.balance || 0), 0);
+  const repeatCustomerCount = customers.filter(c => c.repeatCustomer).length;
+  const referred = rentals.filter(r => r.referred);
+  const commissionPaid = referred.reduce((s, r) => s + Number(r.referralCommission || 0), 0);
+  const referralRevenue = referred.reduce((s, r) => s + Number(r.total || 0), 0);
+
+  return `
+    <div class="card">
+      <div class="flex-between"><h2 style="margin:0;">📊 Overall Sales Overview</h2>
+        <div class="flex gap-8">
+          <button class="btn btn-outline btn-sm" onclick="printSalesOverviewReport()">Print</button>
+          <button class="btn btn-outline btn-sm" onclick="downloadOverviewPDF()">PDF</button>
+        </div>
+      </div>
+      <p class="text-soft">Key numbers only - for a quick management glance. Graphs live in the Sales Analytics tab.</p>
+
+      <h4 class="mt-16" style="color:var(--maroon);">This Year (${thisYear})</h4>
+      <div class="grid cols-3">
+        <div class="stat-box"><div class="num">${LFS.formatMoney(sumTotal(salesYear))}</div><div class="lbl">Sales Revenue</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(sumTotal(rentalsYear))}</div><div class="lbl">Rental Revenue</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(sumTotal(salesYear) + sumTotal(rentalsYear))}</div><div class="lbl">Total Revenue</div></div>
+      </div>
+
+      <h4 class="mt-16" style="color:var(--maroon);">This Month (${thisMonth})</h4>
+      <div class="grid cols-3">
+        <div class="stat-box"><div class="num">${LFS.formatMoney(sumTotal(salesMonth))}</div><div class="lbl">Sales Revenue</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(sumTotal(rentalsMonth))}</div><div class="lbl">Rental Revenue</div></div>
+        <div class="stat-box"><div class="num">${salesMonth.length + rentalsMonth.length}</div><div class="lbl">Transactions</div></div>
+      </div>
+
+      <h4 class="mt-16" style="color:var(--maroon);">Today (${today})</h4>
+      <div class="grid cols-3">
+        <div class="stat-box"><div class="num">${LFS.formatMoney(sumTotal(salesToday))}</div><div class="lbl">Sales Revenue</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(sumTotal(rentalsToday))}</div><div class="lbl">Rental Revenue</div></div>
+        <div class="stat-box"><div class="num">${salesToday.length + rentalsToday.length}</div><div class="lbl">Transactions</div></div>
+      </div>
+
+      <h4 class="mt-16" style="color:var(--maroon);">Payments Received (All-Time)</h4>
+      <div class="grid cols-3">
+        <div class="stat-box"><div class="num">${LFS.formatMoney(cashTotal)}</div><div class="lbl">Cash</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(gpayTotal)}</div><div class="lbl">GPay</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(otherDigitalTotal)}</div><div class="lbl">Other UPI / Card</div></div>
+      </div>
+
+      <h4 class="mt-16" style="color:var(--maroon);">Customers &amp; Referrals</h4>
+      <div class="grid cols-3">
+        <div class="stat-box"><div class="num">${repeatCustomerCount}</div><div class="lbl">Repeat Customers</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(commissionPaid)}</div><div class="lbl">Commission Paid So Far</div></div>
+        <div class="stat-box"><div class="num">${LFS.formatMoney(referralRevenue)}</div><div class="lbl">Revenue via Referrals</div></div>
+      </div>
+
+      <h4 class="mt-16" style="color:var(--maroon);">Outstanding</h4>
+      <div class="grid cols-3">
+        <div class="stat-box"><div class="num">${LFS.formatMoney(pendingBalance)}</div><div class="lbl">Pending Balances (Active Rentals)</div></div>
+        <div class="stat-box"><div class="num">${sales.length + rentals.length}</div><div class="lbl">Total Transactions (All-Time)</div></div>
+        <div class="stat-box"><div class="num">${rentals.filter(r => r.status === "active").length}</div><div class="lbl">Active Rentals</div></div>
+      </div>
+    </div>
+  `;
+}
+function overviewRows() {
+  const sales = LFS.get("lfs_sales");
+  const rentals = LFS.get("lfs_rentals");
+  const customers = LFS.get("lfs_customers");
+  const today = LFS.todayISO();
+  const thisMonth = currentMonthStr(0);
+  const thisYear = String(new Date().getFullYear());
+  const sumTotal = arr => arr.reduce((s, x) => s + Number(x.total || 0), 0);
+  const paymentTotal = (mode) => {
+    let t = sales.filter(s => s.paymentMode === mode).reduce((s, x) => s + Number(x.total || 0), 0);
+    t += rentals.filter(r => r.advancePaymentMode === mode).reduce((s, x) => s + Number(x.advancePaid || 0), 0);
+    t += rentals.filter(r => r.status !== "active" && r.settlementPaymentMode === mode).reduce((s, x) => s + Math.max(0, Number(x.balance || 0)), 0);
+    return t;
+  };
+  const referred = rentals.filter(r => r.referred);
+  return [
+    { metric: "Sales Revenue (Year)", value: LFS.formatMoney(sumTotal(sales.filter(s => s.date.slice(0, 4) === thisYear))) },
+    { metric: "Rental Revenue (Year)", value: LFS.formatMoney(sumTotal(rentals.filter(r => r.rentalDate.slice(0, 4) === thisYear))) },
+    { metric: "Sales Revenue (Month)", value: LFS.formatMoney(sumTotal(sales.filter(s => s.date.slice(0, 7) === thisMonth))) },
+    { metric: "Rental Revenue (Month)", value: LFS.formatMoney(sumTotal(rentals.filter(r => r.rentalDate.slice(0, 7) === thisMonth))) },
+    { metric: "Sales Revenue (Today)", value: LFS.formatMoney(sumTotal(sales.filter(s => s.date === today))) },
+    { metric: "Rental Revenue (Today)", value: LFS.formatMoney(sumTotal(rentals.filter(r => r.rentalDate === today))) },
+    { metric: "Cash Received (All-Time)", value: LFS.formatMoney(paymentTotal("Cash")) },
+    { metric: "GPay Received (All-Time)", value: LFS.formatMoney(paymentTotal("GPay")) },
+    { metric: "Repeat Customers", value: customers.filter(c => c.repeatCustomer).length },
+    { metric: "Commission Paid So Far", value: LFS.formatMoney(referred.reduce((s, r) => s + Number(r.referralCommission || 0), 0)) },
+    { metric: "Revenue via Referrals", value: LFS.formatMoney(referred.reduce((s, r) => s + Number(r.total || 0), 0)) },
+    { metric: "Pending Balances", value: LFS.formatMoney(rentals.filter(r => r.status === "active").reduce((s, x) => s + Number(x.balance || 0), 0)) },
+    { metric: "Total Transactions (All-Time)", value: sales.length + rentals.length }
+  ];
+}
+function printSalesOverviewReport() {
+  LFS.printReport("Overall Sales Overview", LFS.tableHtml(overviewRows(), [{ key: "metric", label: "Metric" }, { key: "value", label: "Value" }]));
+}
+function downloadOverviewPDF() {
+  LFS.downloadPDF("Overall Sales Overview", overviewRows(), [{ key: "metric", label: "Metric" }, { key: "value", label: "Value" }]);
+}
+
+/* ---------- 2. Sales Analytics: graphs only ---------- */
+function renderSRAnalytics() {
+  const sales = LFS.get("lfs_sales");
+  const rentals = LFS.get("lfs_rentals");
   const years = new Set([new Date().getFullYear()]);
   sales.forEach(s => years.add(Number(s.date.slice(0, 4))));
   rentals.forEach(r => years.add(Number(r.rentalDate.slice(0, 4))));
   const yearOptions = Array.from(years).sort((a, b) => b - a).map(y => `<option ${y === SALES_CHART_YEAR ? "selected" : ""}>${y}</option>`).join("");
+  return `
+    <div class="card">
+      <div class="flex-between"><h3 style="margin:0;">📉 Sales Analytics</h3>
+        <select id="chartYearSelect" style="width:110px;" onchange="SALES_CHART_YEAR=Number(this.value);initSalesReportCharts();">${yearOptions}</select>
+      </div>
+      <div class="grid cols-2 mt-16">
+        <div class="chart-box"><h4>Monthly Revenue Trend (${SALES_CHART_YEAR})</h4><canvas id="chartMonthly"></canvas></div>
+        <div class="chart-box"><h4>Daily Revenue - Last 30 Days</h4><canvas id="chartDailyTrend"></canvas></div>
+        <div class="chart-box"><h4>Best-Selling Categories</h4><canvas id="chartCategories"></canvas></div>
+        <div class="chart-box"><h4>Payment Mode - Cash vs UPI</h4><canvas id="chartPayments"></canvas></div>
+        <div class="chart-box"><h4>Sales by Employee</h4><canvas id="chartEmployees"></canvas></div>
+        <div class="chart-box"><h4>New vs Repeat Customers</h4><canvas id="chartCustomerMix"></canvas></div>
+      </div>
+    </div>
+  `;
+}
 
+/* ---------- 3. Referral Program ---------- */
+function renderSRReferral() {
+  const rentals = LFS.get("lfs_rentals");
   const referredRentals = rentals.filter(r => r.referred).slice().reverse();
   const referralTotals = {
     totalCommission: referredRentals.reduce((s, r) => s + Number(r.referralCommission || 0), 0),
@@ -1074,35 +1235,7 @@ function renderSalesReportModule() {
       return names.reduce((a, b) => byReferrer[a] >= byReferrer[b] ? a : b);
     })()
   };
-
   return `
-    <div class="card">
-      <div class="flex-between"><h2 style="margin:0;">📊 Overall Sales Overview</h2>
-        <div class="flex gap-8">
-          <button class="btn btn-outline btn-sm" onclick="printSalesOverviewReport()">Print Overview</button>
-          <button class="btn btn-outline btn-sm" onclick="downloadOverviewPDF()">PDF</button>
-        </div>
-      </div>
-      <div class="grid cols-4">
-        <div class="stat-box"><div class="num">${LFS.formatMoney(salesTotal)}</div><div class="lbl">Daily Sales Revenue</div></div>
-        <div class="stat-box"><div class="num">${LFS.formatMoney(rentalTotal)}</div><div class="lbl">Rental Revenue</div></div>
-        <div class="stat-box"><div class="num">${sales.length + rentals.length}</div><div class="lbl">Total Transactions</div></div>
-        <div class="stat-box"><div class="num">${LFS.formatMoney(pendingBalance)}</div><div class="lbl">Pending Balances</div></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="flex-between"><h3 style="margin:0;">📉 Sales Analytics</h3>
-        <select id="chartYearSelect" style="width:110px;" onchange="SALES_CHART_YEAR=Number(this.value);initSalesCharts();">${yearOptions}</select>
-      </div>
-      <div class="grid cols-2 mt-16">
-        <div class="chart-box"><h4>Monthly Revenue Trend (${SALES_CHART_YEAR})</h4><canvas id="chartMonthly"></canvas></div>
-        <div class="chart-box"><h4>Best-Selling Categories</h4><canvas id="chartCategories"></canvas></div>
-        <div class="chart-box"><h4>Payment Mode - Cash vs UPI</h4><canvas id="chartPayments"></canvas></div>
-        <div class="chart-box"><h4>Sales by Employee</h4><canvas id="chartEmployees"></canvas></div>
-      </div>
-    </div>
-
     <div class="card">
       <div class="flex-between"><h3 style="margin:0;">🤝 Referral Program</h3></div>
       <p class="text-soft">Rentals that came in through a referral, and the commission owed to each referrer.</p>
@@ -1127,7 +1260,13 @@ function renderSalesReportModule() {
         <button class="btn btn-outline btn-sm" onclick="LFS.downloadCSV('referrals.csv', LFS.get('lfs_rentals').filter(r=>r.referred))">Export CSV</button>
       </div>
     </div>
+  `;
+}
 
+/* ---------- 4. Daily Sales ---------- */
+function renderSRDailySales() {
+  const sales = LFS.get("lfs_sales");
+  return `
     <div class="card">
       <div class="flex-between"><h3 style="margin:0;">🛍️ Daily Sales</h3>
         <div class="flex gap-8">
@@ -1136,13 +1275,21 @@ function renderSalesReportModule() {
           <button class="btn btn-outline btn-sm" onclick="LFS.downloadCSV('sales.csv', LFS.get('lfs_sales'))">Export CSV</button>
         </div>
       </div>
-      <div class="table-wrap">
+      <div class="chart-box mt-16"><h4>Top-Selling Items (by revenue)</h4><canvas id="chartTopItems"></canvas></div>
+      <div class="table-wrap mt-16">
         <table>
           <thead><tr><th>Date</th><th>Time (IST)</th><th>Item</th><th>Qty</th><th>Customer</th><th>Employee</th><th>Payment</th><th>Discount</th><th>Pts Earned</th><th>Pts Redeemed</th><th>Total</th></tr></thead>
           <tbody>${sales.slice().reverse().slice(0, 50).map(s => `<tr><td>${s.date}</td><td>${LFS.formatIST(s.createdAt)}</td><td>${escapeHtml(s.itemName)}</td><td>${s.quantity}</td><td>${escapeHtml(s.customerName || "Walk-in")}</td><td>${escapeHtml(s.soldBy || "-")}</td><td>${s.paymentMode || "-"}</td><td>${LFS.formatMoney(s.discount)}</td><td>${s.pointsEarned || 0}</td><td>${s.pointsRedeemed || 0}</td><td>${LFS.formatMoney(s.total)}</td></tr>`).join("") || `<tr><td colspan="11" class="text-soft">No sales yet.</td></tr>`}</tbody>
         </table>
       </div>
     </div>
+  `;
+}
+
+/* ---------- 5. Rentals ---------- */
+function renderSRRentals() {
+  const rentals = LFS.get("lfs_rentals");
+  return `
     <div class="card">
       <div class="flex-between"><h3 style="margin:0;">💍 Rentals</h3>
         <div class="flex gap-8">
@@ -1151,26 +1298,40 @@ function renderSalesReportModule() {
           <button class="btn btn-outline btn-sm" onclick="LFS.downloadCSV('rentals.csv', LFS.get('lfs_rentals'))">Export CSV</button>
         </div>
       </div>
-      <div class="table-wrap">
+      <div class="grid cols-2 mt-16">
+        <div class="chart-box"><h4>Rental Status Breakdown</h4><canvas id="chartRentalStatus"></canvas></div>
+        <div class="chart-box"><h4>Revenue by Event Type</h4><canvas id="chartEventType"></canvas></div>
+      </div>
+      <div class="table-wrap mt-16">
         <table>
           <thead><tr><th>Date</th><th>Time (IST)</th><th>Item</th><th>Customer</th><th>Employee</th><th>Status</th><th>Referred By</th><th>Total</th><th>Balance</th></tr></thead>
           <tbody>${rentals.slice().reverse().slice(0, 50).map(r => `<tr><td>${r.rentalDate}</td><td>${LFS.formatIST(r.createdAt)}</td><td>${escapeHtml(r.itemName)}</td><td>${escapeHtml(r.customerName)}</td><td>${escapeHtml(r.handledBy || "-")}</td><td>${r.status}</td><td>${r.referred ? `${escapeHtml(r.referrerName)} (${LFS.formatMoney(r.referralCommission)})` : "-"}</td><td>${LFS.formatMoney(r.total)}</td><td>${LFS.formatMoney(r.balance)}</td></tr>`).join("") || `<tr><td colspan="9" class="text-soft">No rentals yet.</td></tr>`}</tbody>
         </table>
-
       </div>
     </div>
   `;
 }
 
-function initSalesCharts() {
+/* ============================================================
+   CHARTS - dispatched by active Sales Report sub-tab
+   ============================================================ */
+function initSalesReportCharts() {
   if (!window.Chart) return;
+  if (SALES_REPORT_SUBTAB === "analytics") initAnalyticsCharts();
+  else if (SALES_REPORT_SUBTAB === "referral") initReferralCharts();
+  else if (SALES_REPORT_SUBTAB === "dailySales") initDailySalesCharts();
+  else if (SALES_REPORT_SUBTAB === "rentals") initRentalsCharts();
+}
+
+const CHART_PALETTE = ["#7A1E3D", "#C9A24B", "#3E6259", "#B4483A", "#8E6C88", "#5A1530", "#E8D6A0"];
+
+function initAnalyticsCharts() {
   const sales = LFS.get("lfs_sales");
   const rentals = LFS.get("lfs_rentals");
   const inventory = LFS.get("lfs_inventory");
   const rentalItems = LFS.get("lfs_rental_items");
-  const palette = ["#7A1E3D", "#C9A24B", "#3E6259", "#B4483A", "#8E6C88", "#5A1530", "#E8D6A0"];
+  const customers = LFS.get("lfs_customers");
 
-  // --- Monthly revenue trend ---
   const monthly = Array(12).fill(0);
   sales.forEach(s => { const d = new Date(s.date); if (d.getFullYear() === SALES_CHART_YEAR) monthly[d.getMonth()] += Number(s.total || 0); });
   rentals.forEach(r => { const d = new Date(r.rentalDate); if (d.getFullYear() === SALES_CHART_YEAR) monthly[d.getMonth()] += Number(r.total || 0); });
@@ -1180,90 +1341,109 @@ function initSalesCharts() {
     options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
   });
 
-  // --- Best-selling categories (daily sales + rentals combined) ---
+  // Daily revenue - last 30 days
+  const dayLabels = [], dayTotals = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const iso = d.toISOString().slice(0, 10);
+    dayLabels.push(iso.slice(5));
+    let t = sales.filter(s => s.date === iso).reduce((s, x) => s + Number(x.total || 0), 0);
+    t += rentals.filter(r => r.rentalDate === iso).reduce((s, x) => s + Number(x.total || 0), 0);
+    dayTotals.push(t);
+  }
+  renderOrUpdateChart("chartDailyTrend", {
+    type: "line",
+    data: { labels: dayLabels, datasets: [{ label: "Revenue (₹)", data: dayTotals, borderColor: "#C9A24B", backgroundColor: "rgba(201,162,75,.2)", fill: true, tension: 0.3 }] },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+  });
+
   const catTotals = {};
   sales.forEach(s => { const inv = inventory.find(i => i.id === s.itemId); const cat = inv ? inv.category : "Others"; catTotals[cat] = (catTotals[cat] || 0) + Number(s.total || 0); });
   rentals.forEach(r => { const it = rentalItems.find(i => i.id === r.rentalItemId); const cat = it ? it.category : "Others"; catTotals[cat] = (catTotals[cat] || 0) + Number(r.total || 0); });
   const catLabels = Object.keys(catTotals);
-  renderOrUpdateChart("chartCategories", {
-    type: "pie",
-    data: { labels: catLabels, datasets: [{ data: catLabels.map(l => catTotals[l]), backgroundColor: palette }] }
-  });
+  renderOrUpdateChart("chartCategories", { type: "pie", data: { labels: catLabels, datasets: [{ data: catLabels.map(l => catTotals[l]), backgroundColor: CHART_PALETTE }] } });
 
-  // --- Payment mode: cash vs UPI-type vs other ---
   const payTotals = {};
   sales.forEach(s => { const m = s.paymentMode || "Other"; payTotals[m] = (payTotals[m] || 0) + Number(s.total || 0); });
   rentals.forEach(r => {
     const advMode = r.advancePaymentMode || "Other";
     payTotals[advMode] = (payTotals[advMode] || 0) + Number(r.advancePaid || 0);
-    if (r.status !== "active" && r.settlementPaymentMode) {
-      payTotals[r.settlementPaymentMode] = (payTotals[r.settlementPaymentMode] || 0) + Math.max(0, Number(r.balance || 0));
-    }
+    if (r.status !== "active" && r.settlementPaymentMode) payTotals[r.settlementPaymentMode] = (payTotals[r.settlementPaymentMode] || 0) + Math.max(0, Number(r.balance || 0));
   });
   const payLabels = Object.keys(payTotals);
-  renderOrUpdateChart("chartPayments", {
-    type: "doughnut",
-    data: { labels: payLabels, datasets: [{ data: payLabels.map(l => payTotals[l]), backgroundColor: palette }] }
-  });
+  renderOrUpdateChart("chartPayments", { type: "doughnut", data: { labels: payLabels, datasets: [{ data: payLabels.map(l => payTotals[l]), backgroundColor: CHART_PALETTE }] } });
 
-  // --- Sales by employee ---
   const empTotals = {};
   sales.forEach(s => { const emp = s.soldBy || "Unassigned"; empTotals[emp] = (empTotals[emp] || 0) + Number(s.total || 0); });
   rentals.forEach(r => { const emp = r.handledBy || "Unassigned"; empTotals[emp] = (empTotals[emp] || 0) + Number(r.total || 0); });
   const empLabels = Object.keys(empTotals);
   renderOrUpdateChart("chartEmployees", {
-    type: "bar",
-    data: { labels: empLabels, datasets: [{ label: "Revenue (₹)", data: empLabels.map(l => empTotals[l]), backgroundColor: "#C9A24B" }] },
+    type: "bar", data: { labels: empLabels, datasets: [{ label: "Revenue (₹)", data: empLabels.map(l => empTotals[l]), backgroundColor: "#C9A24B" }] },
     options: { indexAxis: "y", plugins: { legend: { display: false } } }
   });
 
-  // --- Referral Program: top referrers by commission, and commission by month ---
+  const newCount = customers.filter(c => !c.repeatCustomer).length;
+  const repeatCount = customers.filter(c => c.repeatCustomer).length;
+  renderOrUpdateChart("chartCustomerMix", {
+    type: "doughnut",
+    data: { labels: ["New", "Repeat"], datasets: [{ data: [newCount, repeatCount], backgroundColor: ["#8E6C88", "#3E6259"] }] }
+  });
+}
+
+function initReferralCharts() {
+  const rentals = LFS.get("lfs_rentals");
   const referred = rentals.filter(r => r.referred);
   const referrerTotals = {};
   referred.forEach(r => { referrerTotals[r.referrerName] = (referrerTotals[r.referrerName] || 0) + Number(r.referralCommission || 0); });
   const referrerLabels = Object.keys(referrerTotals);
   renderOrUpdateChart("chartTopReferrers", {
-    type: "bar",
-    data: { labels: referrerLabels, datasets: [{ label: "Commission (₹)", data: referrerLabels.map(l => referrerTotals[l]), backgroundColor: "#3E6259" }] },
+    type: "bar", data: { labels: referrerLabels, datasets: [{ label: "Commission (₹)", data: referrerLabels.map(l => referrerTotals[l]), backgroundColor: "#3E6259" }] },
     options: { indexAxis: "y", plugins: { legend: { display: false } } }
   });
-
   const commissionMonthly = Array(12).fill(0);
-  referred.forEach(r => {
-    const d = new Date(r.rentalDate);
-    if (d.getFullYear() === SALES_CHART_YEAR) commissionMonthly[d.getMonth()] += Number(r.referralCommission || 0);
-  });
+  referred.forEach(r => { const d = new Date(r.rentalDate); if (d.getFullYear() === SALES_CHART_YEAR) commissionMonthly[d.getMonth()] += Number(r.referralCommission || 0); });
   renderOrUpdateChart("chartReferralMonthly", {
-    type: "bar",
-    data: { labels: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], datasets: [{ label: "Commission (₹)", data: commissionMonthly, backgroundColor: "#B4483A" }] },
+    type: "bar", data: { labels: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], datasets: [{ label: "Commission (₹)", data: commissionMonthly, backgroundColor: "#B4483A" }] },
     options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
   });
 }
+
+function initDailySalesCharts() {
+  const sales = LFS.get("lfs_sales");
+  const itemTotals = {};
+  sales.forEach(s => { itemTotals[s.itemName] = (itemTotals[s.itemName] || 0) + Number(s.total || 0); });
+  const top = Object.entries(itemTotals).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  renderOrUpdateChart("chartTopItems", {
+    type: "bar",
+    data: { labels: top.map(t => t[0]), datasets: [{ label: "Revenue (₹)", data: top.map(t => t[1]), backgroundColor: "#7A1E3D" }] },
+    options: { indexAxis: "y", plugins: { legend: { display: false } } }
+  });
+}
+
+function initRentalsCharts() {
+  const rentals = LFS.get("lfs_rentals");
+  const statusTotals = {};
+  rentals.forEach(r => { statusTotals[r.status] = (statusTotals[r.status] || 0) + 1; });
+  const statusLabels = Object.keys(statusTotals);
+  renderOrUpdateChart("chartRentalStatus", {
+    type: "doughnut",
+    data: { labels: statusLabels, datasets: [{ data: statusLabels.map(l => statusTotals[l]), backgroundColor: CHART_PALETTE }] }
+  });
+  const eventTotals = {};
+  rentals.forEach(r => { const e = r.eventType || "Others"; eventTotals[e] = (eventTotals[e] || 0) + Number(r.total || 0); });
+  const eventLabels = Object.keys(eventTotals);
+  renderOrUpdateChart("chartEventType", {
+    type: "bar",
+    data: { labels: eventLabels, datasets: [{ label: "Revenue (₹)", data: eventLabels.map(l => eventTotals[l]), backgroundColor: "#8E6C88" }] },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+  });
+}
+
 function renderOrUpdateChart(canvasId, config) {
   const ctx = document.getElementById(canvasId);
   if (!ctx) return;
   if (CHART_REFS[canvasId]) CHART_REFS[canvasId].destroy();
   CHART_REFS[canvasId] = new window.Chart(ctx, config);
-}
-
-function overviewRows() {
-  const sales = LFS.get("lfs_sales");
-  const rentals = LFS.get("lfs_rentals");
-  const salesTotal = sales.reduce((s, x) => s + Number(x.total || 0), 0);
-  const rentalTotal = rentals.reduce((s, x) => s + Number(x.total || 0), 0);
-  const pendingBalance = rentals.filter(r => r.status === "active").reduce((s, x) => s + Number(x.balance || 0), 0);
-  return [
-    { metric: "Daily Sales Revenue", value: LFS.formatMoney(salesTotal) },
-    { metric: "Rental Revenue", value: LFS.formatMoney(rentalTotal) },
-    { metric: "Total Transactions", value: sales.length + rentals.length },
-    { metric: "Pending Balances", value: LFS.formatMoney(pendingBalance) }
-  ];
-}
-function printSalesOverviewReport() {
-  LFS.printReport("Overall Sales Overview", LFS.tableHtml(overviewRows(), [{ key: "metric", label: "Metric" }, { key: "value", label: "Value" }]));
-}
-function downloadOverviewPDF() {
-  LFS.downloadPDF("Overall Sales Overview", overviewRows(), [{ key: "metric", label: "Metric" }, { key: "value", label: "Value" }]);
 }
 function dailySalesRows() {
   return LFS.get("lfs_sales").slice().reverse().map(s => ({
@@ -1517,7 +1697,7 @@ function renderPromotionsModule() {
       <h2>🎉 Promotions &amp; Celebration Discounts</h2>
       <p class="text-soft">Default public holidays and celebrations are listed below, all switched off until you enable them. You can also add your own custom promotions, and scope each one to Daily Sale and/or Rental items in specific categories. These automatically show up as a selectable discount in the Daily Sales and Rental POS screens on the matching date.</p>
       <p class="text-soft"><strong>Only one promotion can be active at a time.</strong> Enabling one automatically requires disabling any other first.</p>
-      ${activeOne ? `<div class="promo-banner">🎉 Currently enabled: <strong>${escapeHtml(activeOne.name)}</strong> (${activeOne.discountPercent}% off, ${describePromoScope(activeOne)})${LFS.activePromotionToday() ? " - live today!" : " - will apply automatically once its date is reached."}</div>` : ""}
+      ${activeOne ? `<div class="promo-banner"><span class="promo-emoji">🎉</span> Currently enabled: <strong>${escapeHtml(activeOne.name)}</strong> (${activeOne.discountPercent}% off, ${describePromoScope(activeOne)})${LFS.activePromotionToday() ? " - live today!" : " - will apply automatically once its date is reached."}</div>` : ""}
       <div class="card" style="background:var(--ivory-dim);box-shadow:none;">
         ${promos.map(p => `
           <div class="promo-row ${p.enabled ? "active-promo" : ""}">
